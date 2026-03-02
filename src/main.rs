@@ -1,4 +1,5 @@
 #![feature(iter_array_chunks)]
+use log::{debug, info};
 use rand::RngExt;
 use std::path::Path;
 
@@ -89,7 +90,7 @@ impl CCH {
         let mut adj;
         {
             // Read files.
-            eprintln!("Reading..");
+            info!("Reading..");
             let order = read_vec(&path.with_added_extension("order"));
             let first_out = read_vec(&path.with_added_extension("first_out"));
             let head = read_vec(&path.with_added_extension("head"));
@@ -99,7 +100,7 @@ impl CCH {
             n = order.len();
 
             // Compute target rank of each node, ie inverse of `order`.
-            eprintln!("Rank..");
+            info!("Rank..");
             let rank = {
                 let mut rank = vec![0; n];
                 for (i, &node) in order.iter().enumerate() {
@@ -109,7 +110,7 @@ impl CCH {
             };
 
             // Convert to adjacency list and reorder according to rank.
-            eprintln!("To adjacency..");
+            info!("To adjacency..");
             adj = vec![Vec::new(); n];
             for i in 0..n {
                 for j in first_out[i]..first_out[i + 1] {
@@ -131,7 +132,7 @@ impl CCH {
         let mut edges = vec![];
 
         // Chordal closure: the upper-context of each node is a clique.
-        eprintln!("Chordal closure..");
+        info!("Chordal closure..");
         for u in 0..n as u32 {
             let mut nbs = std::mem::take(&mut adj[u as usize]);
             nbs.sort_unstable();
@@ -172,8 +173,8 @@ impl CCH {
             assert!(nodes[i as usize].parent > i);
         }
 
-        eprintln!("n: {n}");
-        eprintln!("nodes len: {}", nodes.len());
+        info!("n: {n}");
+        info!("nodes len: {}", nodes.len());
 
         Self {
             n: n as u32,
@@ -207,7 +208,7 @@ impl CCH {
     /// Use the already-permuted weights to customize all edges.
     fn customize(&mut self, perfect: bool) {
         // Copy the input weights into the CCH edges.
-        eprintln!("Set weights..");
+        info!("Set weights..");
         for e in std::mem::take(&mut self.input_edges) {
             let dir = e.dir();
             let (u, v) = e.undirected();
@@ -216,7 +217,7 @@ impl CCH {
         }
 
         // For each node from low to high, relax the edges between its upper neighbours.
-        eprintln!("Relax upper edges..");
+        info!("Relax upper edges..");
         for u in 0..self.n {
             let edge_range = self.edge_range(u);
             for i in edge_range.clone() {
@@ -244,7 +245,7 @@ impl CCH {
         // For each node from high to low, check if the middle and top edge of
         // its triangles between upper neighbours are needed.
         // If they are not tight, update their length and mark them for deletion.
-        eprintln!("Drop redundant lower/middle edges..");
+        info!("Drop redundant lower/middle edges..");
         for u in (0..self.n).rev() {
             let edge_range = self.edge_range(u);
             for i in edge_range.clone() {
@@ -277,7 +278,7 @@ impl CCH {
 
         // Remove the deleted edges.
         // For count for each node the number of non-deleted outgoing edges, and compactify the non-deleted edges.
-        eprintln!("Compress edges..");
+        info!("Compress edges..");
 
         // output edge index
         let mut i = 0;
@@ -327,21 +328,23 @@ impl CCH {
             // Go to parent.
             u = self.nodes[u as usize].parent;
         }
-        eprintln!("dists from {s} in dir {dir}: {num_visited_nodes} visited, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
+        debug!("dists from {s} in dir {dir}: {num_visited_nodes} visited, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
 
         dists
     }
     pub fn query_full(&self, s: NodeId, t: NodeId) -> Weight {
-        eprintln!("query {s} {t}");
+        debug!("query {s} {t}");
         let ds = self.dists(s, UP);
         let dt = self.dists(t, DOWN);
         let dist = (0..self.nodes.len()).map(|i| ds[i] + dt[i]).min().unwrap();
-        eprintln!("dist {s}-{t}: {dist}");
+        debug!("dist {s}-{t}: {dist}");
         dist
     }
 }
 
 fn main() {
+    env_logger::init();
+
     let path = Path::new("graphs/europe");
     let mut cch = CCH::new(path);
     cch.customize(true);
@@ -353,7 +356,7 @@ fn main() {
     let mut rng = rand::rng();
     let queries = (0..q).map(|_| (rng.random_range(0..n), rng.random_range(0..n)));
 
-    eprintln!("Queries..");
+    info!("Queries..");
     for (s, t) in queries {
         cch.query_full(s, t);
     }
