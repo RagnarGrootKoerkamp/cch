@@ -7,7 +7,7 @@ type EdgeId = u32;
 type Weight = i32;
 
 const INVALID_ID: u32 = u32::MAX;
-const W_INF: Weight = i32::MAX / 2;
+const W_INF: Weight = i32::MAX / 3;
 
 /// Input: a path to a file
 /// Output: a vec of binary-encoded u32s
@@ -315,7 +315,7 @@ impl CCH {
                     }
                 }
                 // cleanup for reuse
-                dists[u as usize] = W_INF;
+                // dists[u as usize] = W_INF;
             }
 
             // Go to parent.
