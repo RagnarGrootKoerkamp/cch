@@ -298,15 +298,21 @@ impl CCH {
         let mut dists = vec![W_INF; self.nodes.len()];
         dists[s as usize] = 0;
 
-        eprintln!("dists from {s} in dir {dir}");
+        let mut num_visited_nodes = 0;
+        let mut num_expanded_nodes = 0;
+        let mut num_edges = 0;
 
         let mut u = s;
         while u != INVALID_ID {
-            // eprintln!("u {u}");
+            num_visited_nodes += 1;
             let du = dists[u as usize];
+            // Distance to a parent can be INF in case edges were pruned.
             if du < W_INF {
+                // eprintln!("u {u} du {du}");
+                num_expanded_nodes += 1;
                 let edge_range = self.edge_range(u);
                 for e in &self.edges[edge_range] {
+                    num_edges += 1;
                     let v = e.head;
                     let dv = dists[v as usize];
                     let new_dist = du + e.weight[dir];
@@ -321,6 +327,7 @@ impl CCH {
             // Go to parent.
             u = self.nodes[u as usize].parent;
         }
+        eprintln!("dists from {s} in dir {dir}: {num_visited_nodes} visited, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
 
         dists
     }
@@ -328,10 +335,9 @@ impl CCH {
         eprintln!("query {s} {t}");
         let ds = self.dists(s, UP);
         let dt = self.dists(t, DOWN);
-        (0..self.nodes.len())
-            .map(|i| ds[i] + dt[i])
-            .min()
-            .unwrap_or(W_INF)
+        let dist = (0..self.nodes.len()).map(|i| ds[i] + dt[i]).min().unwrap();
+        eprintln!("dist {s}-{t}: {dist}");
+        dist
     }
 }
 
@@ -341,7 +347,7 @@ fn main() {
     cch.customize(true);
 
     // Generate 1000 random query pairs.
-    let q = 1000;
+    let q = 100;
 
     let n = cch.n;
     let mut rng = rand::rng();
