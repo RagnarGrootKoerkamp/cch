@@ -1,7 +1,7 @@
 #![feature(iter_array_chunks)]
 use log::{debug, info};
 use rand::RngExt;
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 type NodeId = u32;
 type EdgeId = u32;
@@ -80,6 +80,9 @@ pub struct CCH {
     nodes: Vec<Node>,
     /// The undirected CCH edges.
     edges: Vec<HalfEdge>,
+
+    /// Map from (u,v) to index in `edges`.
+    edge_idx: HashMap<(NodeId, NodeId), EdgeId>,
 }
 
 impl CCH {
@@ -181,6 +184,7 @@ impl CCH {
             input_edges,
             nodes,
             edges,
+            edge_idx: HashMap::new(),
         }
     }
 
@@ -192,11 +196,7 @@ impl CCH {
 
     fn find_edge_index(&self, u: NodeId, v: NodeId) -> usize {
         assert!(u < v);
-        let edge_range = self.edge_range(u);
-        edge_range.start
-            + self.edges[edge_range]
-                .binary_search_by_key(&v, |e| e.head)
-                .unwrap()
+        self.edge_idx[&(u, v)] as usize
     }
 
     fn find_edge(&self, u: NodeId, v: NodeId) -> &HalfEdge {
@@ -211,6 +211,16 @@ impl CCH {
 
     /// Use the already-permuted weights to customize all edges.
     fn customize(&mut self, perfect: bool) {
+        info!("Fill edge hashmap..");
+        {
+            for u in 0..self.n {
+                for i in self.edge_range(u) {
+                    let v = self.edges[i].head;
+                    self.edge_idx.insert((u, v), i as u32);
+                }
+            }
+        }
+
         // Copy the input weights into the CCH edges.
         info!("Set weights..");
         for e in std::mem::take(&mut self.input_edges) {
