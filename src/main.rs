@@ -190,19 +190,24 @@ impl CCH {
         i..j
     }
 
-    fn find_edge(&self, u: NodeId, v: NodeId) -> &HalfEdge {
+    fn find_edge_index(&self, u: NodeId, v: NodeId) -> usize {
         assert!(u < v);
         let edge_range = self.edge_range(u);
-        self.edges[edge_range].iter().find(|e| e.head == v).unwrap()
+        edge_range.start
+            + self.edges[edge_range]
+                .iter()
+                .position(|e| e.head == v)
+                .unwrap()
+    }
+
+    fn find_edge(&self, u: NodeId, v: NodeId) -> &HalfEdge {
+        let idx = self.find_edge_index(u, v);
+        &self.edges[idx]
     }
 
     fn find_edge_mut(&mut self, u: NodeId, v: NodeId) -> &mut HalfEdge {
-        assert!(u < v);
-        let edge_range = self.edge_range(u);
-        self.edges[edge_range]
-            .iter_mut()
-            .find(|e| e.head == v)
-            .unwrap()
+        let idx = self.find_edge_index(u, v);
+        &mut self.edges[idx]
     }
 
     /// Use the already-permuted weights to customize all edges.
