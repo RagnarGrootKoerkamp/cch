@@ -26,7 +26,7 @@ struct Node {
     // rank is implicit via ID (=index) of self.
     // rank: u32,
     /// Index into list of edges of the first outgoing edge.
-    first_out: EdgeId,
+    first_edge_idx: EdgeId,
     /// Parent ID.
     parent: NodeId,
 }
@@ -140,7 +140,7 @@ impl CCH {
             if u == n as u32 - 1 {
                 assert_eq!(nbs.len(), 0);
                 nodes.push(Node {
-                    first_out: edges.len() as u32,
+                    first_edge_idx: edges.len() as u32,
                     parent: INVALID_ID,
                 });
                 break;
@@ -149,7 +149,7 @@ impl CCH {
             assert!(parent > u);
 
             nodes.push(Node {
-                first_out: edges.len() as u32,
+                first_edge_idx: edges.len() as u32,
                 parent,
             });
 
@@ -165,7 +165,7 @@ impl CCH {
         }
 
         nodes.push(Node {
-            first_out: edges.len() as u32,
+            first_edge_idx: edges.len() as u32,
             parent: INVALID_ID,
         });
 
@@ -185,8 +185,8 @@ impl CCH {
     }
 
     fn edge_range(&self, u: NodeId) -> std::ops::Range<usize> {
-        let i = self.nodes[u as usize].first_out as usize;
-        let j = self.nodes[u as usize + 1].first_out as usize;
+        let i = self.nodes[u as usize].first_edge_idx as usize;
+        let j = self.nodes[u as usize + 1].first_edge_idx as usize;
         i..j
     }
 
@@ -288,7 +288,7 @@ impl CCH {
         let mut i = 0;
         for u in 0..self.n {
             let edge_range = self.edge_range(u);
-            self.nodes[u as usize].first_out = i as u32;
+            self.nodes[u as usize].first_edge_idx = i as u32;
             for j in edge_range {
                 if !self.edges[j].deleted {
                     self.edges[i] = self.edges[j];
@@ -296,7 +296,7 @@ impl CCH {
                 }
             }
         }
-        self.nodes[self.n as usize].first_out = i as u32;
+        self.nodes[self.n as usize].first_edge_idx = i as u32;
     }
 
     fn dists(&self, s: NodeId, dir: DIR) -> Vec<Weight> {
