@@ -195,8 +195,7 @@ impl CCH {
         let edge_range = self.edge_range(u);
         edge_range.start
             + self.edges[edge_range]
-                .iter()
-                .position(|e| e.head == v)
+                .binary_search_by_key(&v, |e| e.head)
                 .unwrap()
     }
 
