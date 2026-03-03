@@ -471,11 +471,23 @@ impl CCH {
 
         // Process the smaller of s and t.
         let mut cur = [s, t];
-        while cur[UP] != cur[DOWN] {
-            let dir = if cur[UP] < cur[DOWN] { UP } else { DOWN };
+        let mut best_dist = W_INF;
+        while cur[1] != INVALID_ID {
+            if cur[0] == cur[1] {
+                best_dist = best_dist
+                    .min(self.dist[UP][cur[0] as usize] + self.dist[DOWN][cur[1] as usize]);
+            }
+            let dir = if cur[UP] <= cur[DOWN] { UP } else { DOWN };
             let x = cur[dir];
             num_visited_nodes += 1;
             let dx = self.dist[dir][x as usize];
+            if dx >= best_dist {
+                num_pruned += 1;
+                // cleanup for reuse
+                cur[dir] = self.nodes[x as usize].parent;
+                self.dist[dir][x as usize] = W_INF;
+                continue;
+            }
             // Distance to a parent can be INF in case edges were pruned.
             if dx < W_INF {
                 num_expanded_nodes += 1;
@@ -522,51 +534,6 @@ impl CCH {
             // Go to parent.
             cur[dir] = self.nodes[x as usize].parent;
             // trace!("parent of {x} is {}", cur[dir]);
-        }
-
-        let mut best_dist = W_INF;
-
-        // Advance both vertices
-        let mut x = cur[UP];
-        while x != INVALID_ID {
-            best_dist = best_dist.min(self.dist[UP][x as usize] + self.dist[DOWN][x as usize]);
-
-            let edge_range = self.edge_range(x);
-            trace!(
-                "expand {num_expanded_nodes}: dir BOTH {x} nbs {} {:?}",
-                edge_range.len(),
-                compress(&self.edges, edge_range.clone())
-            );
-
-            for dir in [UP, DOWN] {
-                num_visited_nodes += 1;
-                let dx = self.dist[dir][x as usize];
-                if dx >= best_dist {
-                    num_pruned += 1;
-                    // cleanup for reuse
-                    self.dist[dir][x as usize] = W_INF;
-                    continue;
-                }
-                // Distance to a parent can be INF in case edges were pruned.
-                if dx < W_INF {
-                    num_expanded_nodes += 1;
-                    for (_i, e) in self.edges[edge_range.clone()].iter().enumerate() {
-                        num_edges += 1;
-                        let v = e.head;
-                        let dv = self.dist[dir][v as usize];
-                        let new_dist = dx + e.weight[dir];
-                        // if new_dist >= best_dist {
-                        //     num_pruned_edges += edge_range.len() - i;
-                        //     break;
-                        // }
-                        self.dist[dir][v as usize] = dv.min(new_dist);
-                    }
-                    // cleanup for reuse
-                    self.dist[dir][x as usize] = W_INF;
-                }
-            }
-            // Go to parent.
-            x = self.nodes[x as usize].parent;
         }
 
         debug!("dists from {s:>10}-{t:>10}: {best_dist:>10}. {num_visited_nodes:>6} visited, {num_pruned:>6} pruned, {num_expanded_nodes:>6} expanded, {num_edges:>6} relaxed, {num_pruned_edges:>6} pruned edges");
