@@ -4,7 +4,7 @@ use epserde::ser::Serialize;
 use itertools::Itertools;
 use log::{debug, info, trace};
 use rand::RngExt;
-use std::path::Path;
+use std::{ops::Range, path::Path};
 
 type NodeId = u32;
 type EdgeId = u32;
@@ -429,11 +429,11 @@ impl CCH {
             info!("Remaining:    {:>8}", self.edges.len());
         }
 
-        // Sort outgoing edges by increasing weight
-        for u in 0..self.n {
-            let edge_range = self.edge_range(u);
-            self.edges[edge_range].sort_unstable_by_key(|e| e.weight);
-        }
+        // // Sort outgoing edges by increasing weight
+        // for u in 0..self.n {
+        //     let edge_range = self.edge_range(u);
+        //     self.edges[edge_range].sort_unstable_by_key(|e| e.weight);
+        // }
     }
 
     #[inline(never)]
@@ -448,7 +448,7 @@ impl CCH {
         let mut num_expanded_nodes = 0;
         let mut num_edges = 0;
         let mut num_pruned = 0;
-        let mut num_pruned_edges = 0;
+        let num_pruned_edges = 0;
 
         // Process the smaller of s and t.
         let mut cur = [s, t];
@@ -457,11 +457,15 @@ impl CCH {
             let x = cur[dir];
             num_visited_nodes += 1;
             let dx = self.dist[x as usize][dir];
-            // trace!("expand {x} dir {dir} dx {dx}");
             // Distance to a parent can be INF in case edges were pruned.
             if dx < W_INF {
                 num_expanded_nodes += 1;
                 let edge_range = self.edge_range(x);
+                trace!(
+                    "expand {num_expanded_nodes}: {x} dir {dir} dx {dx} nbs {} {:?}",
+                    edge_range.len(),
+                    compress(self.edges[edge_range.clone()].iter().map(|e| e.head))
+                );
                 for e in &self.edges[edge_range] {
                     num_edges += 1;
                     let v = e.head;
@@ -485,6 +489,13 @@ impl CCH {
         while x != INVALID_ID {
             best_dist = best_dist.min(self.dist[x as usize][UP] + self.dist[x as usize][DOWN]);
 
+            let edge_range = self.edge_range(x);
+            trace!(
+                "expand {num_expanded_nodes}: dir BOTH {x} nbs {} {:?}",
+                edge_range.len(),
+                compress(self.edges[edge_range.clone()].iter().map(|e| e.head))
+            );
+
             for dir in [UP, DOWN] {
                 num_visited_nodes += 1;
                 let dx = self.dist[x as usize][dir];
@@ -497,16 +508,15 @@ impl CCH {
                 // Distance to a parent can be INF in case edges were pruned.
                 if dx < W_INF {
                     num_expanded_nodes += 1;
-                    let edge_range = self.edge_range(x);
-                    for (i, e) in self.edges[edge_range.clone()].iter().enumerate() {
+                    for (_i, e) in self.edges[edge_range.clone()].iter().enumerate() {
                         num_edges += 1;
                         let v = e.head;
                         let dv = self.dist[v as usize][dir];
                         let new_dist = dx + e.weight[dir];
-                        if new_dist >= best_dist {
-                            num_pruned_edges += edge_range.len() - i;
-                            break;
-                        }
+                        // if new_dist >= best_dist {
+                        //     num_pruned_edges += edge_range.len() - i;
+                        //     break;
+                        // }
                         self.dist[v as usize][dir] = dv.min(new_dist);
                     }
                     // cleanup for reuse
@@ -537,7 +547,7 @@ fn main() {
         CCH::read(path)
     };
 
-    let q = 300000;
+    let q = 100;
 
     let n = cch.n;
     let mut rng = rand::rng();
@@ -555,4 +565,21 @@ fn main() {
         "Queries.. done {} us/q",
         elapsed.as_nanos() / queries.len() as u128 / 1000
     );
+}
+
+fn compress(mut data: impl Iterator<Item = u32>) -> Vec<Range<u32>> {
+    let mut ranges = vec![];
+    let Some(mut start) = data.next() else {
+        return ranges;
+    };
+    let mut prev = start;
+    for x in data {
+        if x != prev + 1 {
+            ranges.push(start..prev + 1);
+            start = x;
+        }
+        prev = x;
+    }
+    ranges.push(start..prev + 1);
+    ranges
 }
