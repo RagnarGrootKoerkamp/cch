@@ -383,6 +383,8 @@ impl CCH {
                 let dx = self.dist[x as usize][dir];
                 if dx >= best_dist {
                     num_pruned += 1;
+                    // cleanup for reuse
+                    self.dist[x as usize][dir] = W_INF;
                     continue;
                 }
                 // Distance to a parent can be INF in case edges were pruned.
