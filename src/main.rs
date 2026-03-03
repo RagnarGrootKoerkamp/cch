@@ -247,7 +247,7 @@ impl CCH {
             for i in edge_range.clone() {
                 let ux = self.edges[i];
                 let x = ux.head;
-                let mut idx = self.edge_range(u).start as usize;
+                let mut idx = self.edge_range(x).start as usize;
                 for j in i + 1..edge_range.end {
                     let uy = self.edges[j];
                     let y = uy.head;
