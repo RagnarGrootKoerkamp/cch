@@ -268,6 +268,7 @@ impl CCH {
         (range.start_edge_idx + v - range.start) as usize
     }
 
+    #[allow(unused)]
     fn find_edge(&self, u: NodeId, v: NodeId) -> &HalfEdge {
         let idx = self.find_edge_index(u, v);
         &self.edges[idx]
@@ -285,7 +286,6 @@ impl CCH {
         for e in std::mem::take(&mut self.input_edges) {
             let dir = e.dir();
             let (u, v) = e.undirected();
-            // Linear scan for the corresponding edge.
             self.find_edge_mut(u, v).weight[dir] = e.weight;
         }
 
@@ -294,13 +294,18 @@ impl CCH {
         for u in 0..self.n {
             let edge_range = self.edge_range(u);
             for i in edge_range.clone() {
+                let ux = self.edges[i];
+                let x = ux.head;
+                let mut idx = self.edge_range(u).start as usize;
                 for j in i + 1..edge_range.end {
-                    let ux = self.edges[i];
                     let uy = self.edges[j];
-                    let x = ux.head;
                     let y = uy.head;
                     assert!(x < y);
-                    let xy = self.find_edge_mut(x, y);
+                    while self.edges[idx].head < y {
+                        idx += 1;
+                    }
+                    assert_eq!(self.edges[idx].head, y);
+                    let xy = &mut self.edges[idx];
 
                     for dir in [UP, DOWN] {
                         let xy_relax = ux.weight[dir ^ 1] + uy.weight[dir];
@@ -322,13 +327,18 @@ impl CCH {
         for u in (0..self.n).rev() {
             let edge_range = self.edge_range(u);
             for i in edge_range.clone() {
+                let ux = self.edges[i];
+                let x = ux.head;
+                let mut idx = self.edge_range(u).start as usize;
                 for j in i + 1..edge_range.end {
-                    let ux = self.edges[i];
                     let uy = self.edges[j];
-                    let x = ux.head;
                     let y = uy.head;
                     assert!(x < y);
-                    let xy = *self.find_edge(x, y);
+                    while self.edges[idx].head < y {
+                        idx += 1;
+                    }
+                    assert_eq!(self.edges[idx].head, y);
+                    let xy = self.edges[idx];
 
                     // i < x < y
                     for dir in [UP, DOWN] {
