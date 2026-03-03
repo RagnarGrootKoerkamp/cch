@@ -326,7 +326,7 @@ impl CCH {
 
     fn query(&mut self, s: NodeId, t: NodeId) -> Weight {
         self.dist[s as usize][UP] = 0;
-        self.dist[s as usize][DOWN] = 0;
+        self.dist[t as usize][DOWN] = 0;
 
         let mut num_visited_nodes = 0;
         let mut num_expanded_nodes = 0;
