@@ -94,6 +94,8 @@ pub struct CCH {
     edges: Vec<HalfEdge>,
     /// Ranges of edges
     edge_ranges: Vec<Range<u32>>,
+    /// Flattened edge weights
+    edge_weigths: [Vec<Weight>; 2],
 
     /// Up and down distance cache to each node for queries.
     dist: [Vec<Weight>; 2],
@@ -271,6 +273,7 @@ impl CCH {
             input_edges,
             nodes,
             edges,
+            edge_weigths: [vec![], vec![]],
             edge_ranges: vec![],
             dist: [vec![], vec![]],
         }
@@ -453,6 +456,12 @@ impl CCH {
             self.edge_ranges.extend(ranges);
         }
         self.nodes[self.n as usize].first_range_idx = self.edge_ranges.len() as u32;
+        // Fill edge weights
+        for e in &self.edges {
+            for dir in [UP, DOWN] {
+                self.edge_weigths[dir].push(e.weight[dir]);
+            }
+        }
     }
 
     #[inline(never)]
@@ -511,6 +520,7 @@ impl CCH {
                     let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
                         ..self.nodes[x as usize + 1].first_range_idx as usize];
                     let d = &mut self.dist[dir];
+                    let w = &self.edge_weigths[dir];
                     for range in ranges {
                         unsafe {
                             let edge_range = range.start as usize..range.end as usize;
@@ -520,8 +530,7 @@ impl CCH {
                             for i in 0..edge_range.len() {
                                 let v = v0 + i as u32;
                                 let dv = *d.get_unchecked(v as usize);
-                                let new_dist =
-                                    dx + self.edges.get_unchecked(i0 + i).weight.get_unchecked(dir);
+                                let new_dist = dx + w.get_unchecked(i0 + i);
                                 *d.get_unchecked_mut(v as usize) = dv.min(new_dist);
                             }
                         }
