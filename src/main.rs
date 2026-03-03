@@ -447,7 +447,8 @@ impl CCH {
         // Compute edge ranges
         for u in 0..self.n {
             let edge_range = self.edge_range(u);
-            let ranges = compress(self.edges[edge_range.clone()].iter().map(|e| e.head));
+            // let ranges = compress(self.edges[edge_range.clone()].iter().map(|e| e.head));
+            let ranges = compress(&self.edges, edge_range.clone());
             self.nodes[u as usize].first_range_idx = self.edge_ranges.len() as u32;
             self.edge_ranges.extend(ranges);
         }
@@ -482,7 +483,7 @@ impl CCH {
                 trace!(
                     "expand {num_expanded_nodes}: {x} dir {dir} dx {dx} nbs {} {:?}",
                     edge_range.len(),
-                    compress(self.edges[edge_range.clone()].iter().map(|e| e.head))
+                    compress(&self.edges, edge_range.clone())
                 );
                 for e in &self.edges[edge_range] {
                     num_edges += 1;
@@ -511,7 +512,7 @@ impl CCH {
             trace!(
                 "expand {num_expanded_nodes}: dir BOTH {x} nbs {} {:?}",
                 edge_range.len(),
-                compress(self.edges[edge_range.clone()].iter().map(|e| e.head))
+                compress(&self.edges, edge_range.clone())
             );
 
             for dir in [UP, DOWN] {
@@ -565,7 +566,7 @@ fn main() {
         CCH::read(path)
     };
 
-    let q = 100;
+    let q = 10000;
 
     let n = cch.n;
     let mut rng = rand::rng();
@@ -585,19 +586,25 @@ fn main() {
     );
 }
 
-fn compress(mut data: impl Iterator<Item = u32>) -> Vec<Range<u32>> {
+/// Takes a range of EdgeId and splits it into multiple ranges of EdgeId
+/// where the neighbours are consecutive.
+fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<Range<EdgeId>> {
+    // let in_range = range.clone();
     let mut ranges = vec![];
-    let Some(mut start) = data.next() else {
+    let Some(mut start) = range.next() else {
         return ranges;
     };
-    let mut prev = start;
-    for x in data {
-        if x != prev + 1 {
-            ranges.push(start..prev + 1);
+    let mut prev = edges[start].head;
+    for x in range.clone() {
+        if edges[x].head != prev + 1 {
+            ranges.push(start as u32..x as u32);
             start = x;
         }
-        prev = x;
+        prev = edges[x].head;
     }
-    ranges.push(start..prev + 1);
+    ranges.push(start as u32..range.end as u32);
+    // if in_range.len() > 100 {
+    //     eprintln!("compress {in_range:?} to {ranges:?}");
+    // }
     ranges
 }
