@@ -479,9 +479,10 @@ impl CCH {
             // Distance to a parent can be INF in case edges were pruned.
             if dx < W_INF {
                 num_expanded_nodes += 1;
+                let edge_range = self.edge_range(x);
+                num_edges += edge_range.len();
                 if false {
                     // scalar
-                    let edge_range = self.edge_range(x);
                     trace!(
                         "expand {num_expanded_nodes}: {x} dir {dir} dx {dx} nbs {} {:?}",
                         edge_range.len(),
@@ -497,17 +498,20 @@ impl CCH {
                 } else {
                     let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
                         ..self.nodes[x as usize + 1].first_range_idx as usize];
+                    let d = &mut self.dist[dir];
                     for range in ranges {
-                        let edge_range = range.start as usize..range.end as usize;
-                        let i0 = edge_range.start;
-                        let e0 = self.edges[i0];
-                        let v0 = e0.head;
-                        for i in 0..edge_range.len() {
-                            num_edges += 1;
-                            let v = v0 + i as u32;
-                            let dv = self.dist[dir][v as usize];
-                            let new_dist = dx + self.edges[i0 + i].weight[dir];
-                            self.dist[dir][v as usize] = dv.min(new_dist);
+                        unsafe {
+                            let edge_range = range.start as usize..range.end as usize;
+                            let i0 = edge_range.start;
+                            let e0 = self.edges.get_unchecked(i0);
+                            let v0 = e0.head;
+                            for i in 0..edge_range.len() {
+                                let v = v0 + i as u32;
+                                let dv = *d.get_unchecked(v as usize);
+                                let new_dist =
+                                    dx + self.edges.get_unchecked(i0 + i).weight.get_unchecked(dir);
+                                *d.get_unchecked_mut(v as usize) = dv.min(new_dist);
+                            }
                         }
                     }
                 }
