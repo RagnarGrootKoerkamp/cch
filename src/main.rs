@@ -634,7 +634,7 @@ fn main() {
         CCH::read(path)
     };
 
-    let q = 30000;
+    let q = 100000;
 
     let n = cch.n;
     let mut rng = rand::rng();
