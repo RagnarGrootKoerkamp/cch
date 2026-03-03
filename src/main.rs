@@ -478,10 +478,12 @@ impl CCH {
                 continue;
             }
             let mut last_v = self.edges[edge_range.start].head;
+            let mut start = last_v;
+            let mut end = start + 8;
             for i in edge_range {
                 let e = self.edges[i];
                 let v = e.head;
-                if v <= last_v + GAP {
+                if v <= end + GAP {
                     for v_new in last_v + 1..v {
                         new_edges.push(HalfEdge {
                             head: v_new,
@@ -489,9 +491,31 @@ impl CCH {
                             deleted: false,
                         });
                     }
+                } else {
+                    // break the range, but round to multiple of 8 first
+                    for v_new in last_v + 1..end {
+                        new_edges.push(HalfEdge {
+                            head: v_new,
+                            weight: [W_INF; 2],
+                            deleted: false,
+                        });
+                    }
+                    start = v;
+                    end = start + 8;
                 }
                 new_edges.push(e);
+                while v >= end {
+                    end += 8;
+                }
                 last_v = v;
+            }
+            // round the last range to multiple of 8
+            for v_new in last_v + 1..end {
+                new_edges.push(HalfEdge {
+                    head: v_new,
+                    weight: [W_INF; 2],
+                    deleted: false,
+                });
             }
         }
         info!("End with {} edges", new_edges.len());
@@ -503,6 +527,12 @@ impl CCH {
             let edge_range = self.edge_range(u);
             // let ranges = compress(self.edges[edge_range.clone()].iter().map(|e| e.head));
             let ranges = compress(&self.edges, edge_range.clone());
+            for range in &ranges {
+                assert!(
+                    (range.end - range.start) % 8 == 0,
+                    "found range {range:?} of unexpected len"
+                );
+            }
             self.nodes[u as usize].first_range_idx = self.edge_ranges.len() as u32;
             self.edge_ranges.extend(ranges);
         }
