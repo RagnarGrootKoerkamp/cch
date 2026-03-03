@@ -96,7 +96,7 @@ pub struct CCH {
     edge_ranges: Vec<Range<u32>>,
 
     /// Up and down distance cache to each node for queries.
-    dist: Vec<[Weight; 2]>,
+    dist: [Vec<Weight>; 2],
 }
 
 impl CCH {
@@ -272,7 +272,7 @@ impl CCH {
             nodes,
             edges,
             edge_ranges: vec![],
-            dist: vec![],
+            dist: [vec![], vec![]],
         }
     }
 
@@ -280,7 +280,8 @@ impl CCH {
     fn save(&mut self, path: &Path) {
         info!("Saving..");
         self.input_edges.clear();
-        self.dist.clear();
+        self.dist[0].clear();
+        self.dist[1].clear();
         let mut file = std::fs::File::create(path.with_added_extension("cch")).unwrap();
         unsafe { self.serialize(&mut file).unwrap() };
     }
@@ -455,11 +456,11 @@ impl CCH {
 
     #[inline(never)]
     fn query(&mut self, s: NodeId, t: NodeId) -> Weight {
-        if self.dist.is_empty() {
-            self.dist = vec![[W_INF; 2]; self.nodes.len()];
+        if self.dist[0].is_empty() {
+            self.dist = [vec![W_INF; self.nodes.len()], vec![W_INF; self.nodes.len()]];
         }
-        self.dist[s as usize][UP] = 0;
-        self.dist[t as usize][DOWN] = 0;
+        self.dist[UP][s as usize] = 0;
+        self.dist[DOWN][t as usize] = 0;
 
         let mut num_visited_nodes = 0;
         let mut num_expanded_nodes = 0;
@@ -473,7 +474,7 @@ impl CCH {
             let dir = if cur[UP] < cur[DOWN] { UP } else { DOWN };
             let x = cur[dir];
             num_visited_nodes += 1;
-            let dx = self.dist[x as usize][dir];
+            let dx = self.dist[dir][x as usize];
             // Distance to a parent can be INF in case edges were pruned.
             if dx < W_INF {
                 num_expanded_nodes += 1;
@@ -486,12 +487,12 @@ impl CCH {
                 for e in &self.edges[edge_range] {
                     num_edges += 1;
                     let v = e.head;
-                    let dv = self.dist[v as usize][dir];
+                    let dv = self.dist[dir][v as usize];
                     let new_dist = dx + e.weight[dir];
-                    self.dist[v as usize][dir] = dv.min(new_dist);
+                    self.dist[dir][v as usize] = dv.min(new_dist);
                 }
                 // cleanup for reuse
-                self.dist[x as usize][dir] = W_INF;
+                self.dist[dir][x as usize] = W_INF;
             }
 
             // Go to parent.
@@ -504,7 +505,7 @@ impl CCH {
         // Advance both vertices
         let mut x = cur[UP];
         while x != INVALID_ID {
-            best_dist = best_dist.min(self.dist[x as usize][UP] + self.dist[x as usize][DOWN]);
+            best_dist = best_dist.min(self.dist[UP][x as usize] + self.dist[DOWN][x as usize]);
 
             let edge_range = self.edge_range(x);
             trace!(
@@ -515,11 +516,11 @@ impl CCH {
 
             for dir in [UP, DOWN] {
                 num_visited_nodes += 1;
-                let dx = self.dist[x as usize][dir];
+                let dx = self.dist[dir][x as usize];
                 if dx >= best_dist {
                     num_pruned += 1;
                     // cleanup for reuse
-                    self.dist[x as usize][dir] = W_INF;
+                    self.dist[dir][x as usize] = W_INF;
                     continue;
                 }
                 // Distance to a parent can be INF in case edges were pruned.
@@ -528,16 +529,16 @@ impl CCH {
                     for (_i, e) in self.edges[edge_range.clone()].iter().enumerate() {
                         num_edges += 1;
                         let v = e.head;
-                        let dv = self.dist[v as usize][dir];
+                        let dv = self.dist[dir][v as usize];
                         let new_dist = dx + e.weight[dir];
                         // if new_dist >= best_dist {
                         //     num_pruned_edges += edge_range.len() - i;
                         //     break;
                         // }
-                        self.dist[v as usize][dir] = dv.min(new_dist);
+                        self.dist[dir][v as usize] = dv.min(new_dist);
                     }
                     // cleanup for reuse
-                    self.dist[x as usize][dir] = W_INF;
+                    self.dist[dir][x as usize] = W_INF;
                 }
             }
             // Go to parent.
