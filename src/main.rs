@@ -446,17 +446,30 @@ fn main() {
     let mut cch = CCH::new(path);
     cch.customize(true);
 
-    let q = 300000;
+    let q = 100000;
 
     let n = cch.n;
     let mut rng = rand::rng();
-    let queries = (0..q).map(|_| (rng.random_range(0..n), rng.random_range(0..n)));
+    let queries = (0..q)
+        .map(|_| (rng.random_range(0..n), rng.random_range(0..n)))
+        .collect_vec();
 
-    info!("Queries..");
+    // Filter for non-inf queries.
+    info!("Filter for finite queries..");
+    let finite_queries = queries
+        .iter()
+        .cloned()
+        .filter(|&(s, t)| cch.query(s, t) < W_INF)
+        .collect_vec();
+
+    info!("{} finite queries..", finite_queries.len());
     let start = std::time::Instant::now();
-    for (s, t) in queries {
-        cch.query(s, t);
+    for (s, t) in &finite_queries {
+        cch.query(*s, *t);
     }
     let elapsed = start.elapsed();
-    info!("Queries.. done {} ns/q", elapsed.as_nanos() / q);
+    info!(
+        "Queries.. done {} ns/q",
+        elapsed.as_nanos() / finite_queries.len() as u128
+    );
 }
