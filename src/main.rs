@@ -129,7 +129,73 @@ impl CCH {
                     adj[u as usize].push(v);
                 }
             }
+
+            for i in 0..n {
+                adj[i].sort_unstable();
+                adj[i].dedup();
+            }
         };
+
+        {
+            // Slightly reduced chordal closure to compute parents.
+            info!("Compute parents..");
+            let mut parents = vec![INVALID_ID; n];
+            for u in 0..n as u32 {
+                let mut nbs = std::mem::take(&mut adj[u as usize]);
+                nbs.sort_unstable();
+                nbs.dedup();
+                if u == n as u32 - 1 {
+                    break;
+                }
+                let parent = nbs[0];
+                parents[u as usize] = parent;
+                assert!(parent > u);
+                adj[parent as usize].extend(&nbs[1..]);
+                adj[u as usize] = nbs;
+            }
+
+            info!("Compute DFS order..");
+            // Re-order the nodes by a DFS traversal.
+            let mut done = vec![false; n];
+            let mut new_order = vec![];
+            let mut buf = vec![];
+            for u in 0..n as u32 {
+                if done[u as usize] {
+                    continue;
+                }
+                let mut p = u;
+                while p != INVALID_ID && !done[p as usize] {
+                    done[p as usize] = true;
+                    buf.push(p);
+                    p = parents[p as usize];
+                }
+                new_order.extend(buf.drain(..).rev());
+            }
+            new_order.reverse();
+            assert_eq!(new_order.len(), n);
+
+            info!("Apply permutation..");
+            let mut rank = vec![0; n];
+            for (i, &node) in new_order.iter().enumerate() {
+                rank[node as usize] = i as u32;
+            }
+            // remap all nodes.
+            let mut new_adj = vec![Vec::new(); n];
+            for u in 0..n as u32 {
+                let new_u = rank[u as usize];
+                for &v in &adj[u as usize] {
+                    let new_v = rank[v as usize];
+                    new_adj[new_u as usize].push(new_v);
+                }
+            }
+
+            for e in &mut input_edges {
+                e.tail = rank[e.tail as usize];
+                e.head = rank[e.head as usize];
+            }
+
+            adj = new_adj;
+        }
 
         // The parent of each node. Computed during chordal completion.
         let mut nodes = vec![];
