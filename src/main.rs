@@ -1,10 +1,17 @@
-#![feature(iter_array_chunks)]
+#![feature(iter_array_chunks, portable_simd)]
 use epserde::deser::Deserialize;
 use epserde::ser::Serialize;
 use itertools::Itertools;
 use log::{debug, info, trace};
 use rand::RngExt;
-use std::{ops::Range, path::Path};
+use std::{
+    ops::Range,
+    path::Path,
+    simd::{
+        cmp::{SimdOrd, SimdPartialOrd},
+        i32x8, Select,
+    },
+};
 
 type NodeId = u32;
 type EdgeId = u32;
@@ -524,14 +531,33 @@ impl CCH {
                     for range in ranges {
                         unsafe {
                             let edge_range = range.start as usize..range.end as usize;
-                            let i0 = edge_range.start;
+                            let mut i0 = edge_range.start;
+                            let iend = edge_range.end;
                             let e0 = self.edges.get_unchecked(i0);
-                            let v0 = e0.head;
-                            for i in 0..edge_range.len() {
-                                let v = v0 + i as u32;
-                                let dv = *d.get_unchecked(v as usize);
-                                let new_dist = dx + w.get_unchecked(i0 + i);
-                                *d.get_unchecked_mut(v as usize) = dv.min(new_dist);
+                            let mut v0 = e0.head;
+
+                            while i0 < iend {
+                                let old_dists = i32x8::from_array(
+                                    *d.get_unchecked(v0 as usize..v0 as usize + 8)
+                                        .as_array()
+                                        .unwrap(),
+                                );
+                                let ws = i32x8::from_array(
+                                    *w.get_unchecked(i0..i0 + 8).as_array().unwrap(),
+                                );
+                                let new_dists = ws + i32x8::splat(dx);
+                                // Set the last extra lanes to INF so that they won't affect the min.
+                                const SIMD_INF: i32x8 = i32x8::splat(W_INF);
+                                const IDX: i32x8 = i32x8::from_array([0, 1, 2, 3, 4, 5, 6, 7]);
+                                let count = i32x8::splat((iend - i0) as i32);
+                                let masked_dists = IDX.simd_lt(count).select(new_dists, SIMD_INF);
+                                let min_dists = old_dists.simd_min(masked_dists);
+                                *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
+                                    .as_mut_array()
+                                    .unwrap() = min_dists.to_array();
+
+                                i0 += 8;
+                                v0 += 8;
                             }
                         }
                     }
