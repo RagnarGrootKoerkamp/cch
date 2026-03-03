@@ -177,9 +177,10 @@ impl CCH {
             assert!(nodes[i as usize].parent > i);
         }
 
-        info!("n: {n}");
-        info!("nodes len: {}", nodes.len());
-        info!("edges len: {}", edges.len());
+        info!("n:           {n:>9}");
+        info!("input edges: {:>9}", input_edges.len());
+        info!("added edges: {:>9}", edges.len() - input_edges.len());
+        info!("total edges: {:>9}", edges.len());
 
         Self {
             n: n as u32,
@@ -271,67 +272,75 @@ impl CCH {
             }
         }
 
-        if !perfect {
-            return;
-        }
-
-        // Drop edges that are never in a shortest path.
-        // For each node from high to low, check if the middle and top edge of
-        // its triangles between upper neighbours are needed.
-        // If they are not tight, update their length and mark them for deletion.
-        info!("Drop redundant lower/middle edges..");
-        for u in (0..self.n).rev() {
-            let edge_range = self.edge_range(u);
-            for i in edge_range.clone() {
-                let ux = self.edges[i];
-                let x = ux.head;
-                let mut idx = self.edge_range(u).start as usize;
-                for j in i + 1..edge_range.end {
-                    let uy = self.edges[j];
-                    let y = uy.head;
-                    assert!(x < y);
-                    while self.edges[idx].head < y {
-                        idx += 1;
-                    }
-                    assert_eq!(self.edges[idx].head, y);
-                    let xy = self.edges[idx];
-
-                    // i < x < y
-                    for dir in [UP, DOWN] {
-                        let ux_relax = uy.weight[dir] + xy.weight[dir ^ 1];
-                        if ux_relax < ux.weight[dir] {
-                            let ux = &mut self.edges[i];
-                            ux.weight[dir] = ux_relax;
-                            ux.deleted = true;
+        if perfect {
+            // Drop edges that are never in a shortest path.
+            // For each node from high to low, check if the middle and top edge of
+            // its triangles between upper neighbours are needed.
+            // If they are not tight, update their length and mark them for deletion.
+            info!("Drop redundant lower/middle edges..");
+            for u in (0..self.n).rev() {
+                let edge_range = self.edge_range(u);
+                for i in edge_range.clone() {
+                    let ux = self.edges[i];
+                    let x = ux.head;
+                    let mut idx = self.edge_range(u).start as usize;
+                    for j in i + 1..edge_range.end {
+                        let uy = self.edges[j];
+                        let y = uy.head;
+                        assert!(x < y);
+                        while self.edges[idx].head < y {
+                            idx += 1;
                         }
-                        let uy_relax = ux.weight[dir] + xy.weight[dir];
-                        if uy_relax < uy.weight[dir] {
-                            let uy = &mut self.edges[j];
-                            uy.weight[dir] = uy_relax;
-                            uy.deleted = true;
+                        assert_eq!(self.edges[idx].head, y);
+                        let xy = self.edges[idx];
+
+                        // i < x < y
+                        for dir in [UP, DOWN] {
+                            let ux_relax = uy.weight[dir] + xy.weight[dir ^ 1];
+                            if ux_relax < ux.weight[dir] {
+                                let ux = &mut self.edges[i];
+                                ux.weight[dir] = ux_relax;
+                                ux.deleted = true;
+                            }
+                            let uy_relax = ux.weight[dir] + xy.weight[dir];
+                            if uy_relax < uy.weight[dir] {
+                                let uy = &mut self.edges[j];
+                                uy.weight[dir] = uy_relax;
+                                uy.deleted = true;
+                            }
                         }
                     }
                 }
             }
+
+            // Remove the deleted edges.
+            // For count for each node the number of non-deleted outgoing edges, and compactify the non-deleted edges.
+            info!("Compress edges..");
+
+            let num_edges = self.edges.len();
+            // output edge index
+            let mut i = 0;
+            for u in 0..self.n {
+                let edge_range = self.edge_range(u);
+                self.nodes[u as usize].first_edge_idx = i as u32;
+                for j in edge_range {
+                    if !self.edges[j].deleted {
+                        self.edges[i] = self.edges[j];
+                        i += 1;
+                    }
+                }
+            }
+            self.nodes[self.n as usize].first_edge_idx = i as u32;
+            self.edges.truncate(i);
+            info!("Pruned edges: {:>8}", num_edges - self.edges.len());
+            info!("Remaining:    {:>8}", self.edges.len());
         }
 
-        // Remove the deleted edges.
-        // For count for each node the number of non-deleted outgoing edges, and compactify the non-deleted edges.
-        info!("Compress edges..");
-
-        // output edge index
-        let mut i = 0;
+        // Sort outgoing edges by increasing weight
         for u in 0..self.n {
             let edge_range = self.edge_range(u);
-            self.nodes[u as usize].first_edge_idx = i as u32;
-            for j in edge_range {
-                if !self.edges[j].deleted {
-                    self.edges[i] = self.edges[j];
-                    i += 1;
-                }
-            }
+            self.edges[edge_range].sort_unstable_by_key(|e| e.weight);
         }
-        self.nodes[self.n as usize].first_edge_idx = i as u32;
     }
 
     fn query(&mut self, s: NodeId, t: NodeId) -> Weight {
@@ -342,6 +351,7 @@ impl CCH {
         let mut num_expanded_nodes = 0;
         let mut num_edges = 0;
         let mut num_pruned = 0;
+        let mut num_pruned_edges = 0;
 
         // Process the smaller of s and t.
         let mut cur = [s, t];
@@ -391,11 +401,15 @@ impl CCH {
                 if dx < W_INF {
                     num_expanded_nodes += 1;
                     let edge_range = self.edge_range(x);
-                    for e in &self.edges[edge_range] {
+                    for (i, e) in self.edges[edge_range.clone()].iter().enumerate() {
                         num_edges += 1;
                         let v = e.head;
                         let dv = self.dist[v as usize][dir];
                         let new_dist = dx + e.weight[dir];
+                        if new_dist >= best_dist {
+                            num_pruned_edges += edge_range.len() - i;
+                            break;
+                        }
                         self.dist[v as usize][dir] = dv.min(new_dist);
                     }
                     // cleanup for reuse
@@ -406,7 +420,7 @@ impl CCH {
             x = self.nodes[x as usize].parent;
         }
 
-        debug!("dists from {s:>10}-{t:>10}: {best_dist:>10}. {num_visited_nodes:>6} visited, {num_pruned:>6} pruned, {num_expanded_nodes:>6} expanded, {num_edges:>6} relaxed");
+        debug!("dists from {s:>10}-{t:>10}: {best_dist:>10}. {num_visited_nodes:>6} visited, {num_pruned:>6} pruned, {num_expanded_nodes:>6} expanded, {num_edges:>6} relaxed, {num_pruned_edges:>6} pruned edges");
         best_dist
     }
 }
