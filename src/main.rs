@@ -87,6 +87,7 @@ pub struct CCH {
 
 impl CCH {
     /// path: "graph/europe"
+    #[inline(never)]
     pub fn new(path: &Path) -> Self {
         let n;
         let mut input_edges = vec![];
@@ -296,6 +297,7 @@ impl CCH {
     }
 
     /// Use the already-permuted weights to customize all edges.
+    #[inline(never)]
     fn customize(&mut self, perfect: bool) {
         // Copy the input weights into the CCH edges.
         info!("Set weights..");
@@ -409,6 +411,7 @@ impl CCH {
         }
     }
 
+    #[inline(never)]
     fn query(&mut self, s: NodeId, t: NodeId) -> Weight {
         self.dist[s as usize][UP] = 0;
         self.dist[t as usize][DOWN] = 0;
