@@ -350,7 +350,7 @@ impl CCH {
             let x = cur[dir];
             num_visited_nodes += 1;
             let dx = self.dist[x as usize][dir];
-            trace!("expand {x} dir {dir} dx {dx}");
+            // trace!("expand {x} dir {dir} dx {dx}");
             // Distance to a parent can be INF in case edges were pruned.
             if dx < W_INF {
                 num_expanded_nodes += 1;
@@ -368,7 +368,7 @@ impl CCH {
 
             // Go to parent.
             cur[dir] = self.nodes[x as usize].parent;
-            trace!("parent of {x} is {}", cur[dir]);
+            // trace!("parent of {x} is {}", cur[dir]);
         }
 
         let mut best_dist = W_INF;
@@ -406,7 +406,7 @@ impl CCH {
             x = self.nodes[x as usize].parent;
         }
 
-        debug!("dists from {s}-{t}: {best_dist}. {num_visited_nodes} visited, {num_pruned} pruned, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
+        debug!("dists from {s:>10}-{t:>10}: {best_dist:>10}. {num_visited_nodes:>6} visited, {num_pruned:>6} pruned, {num_expanded_nodes:>6} expanded, {num_edges:>6} relaxed");
         best_dist
     }
 }
@@ -418,7 +418,7 @@ fn main() {
     let mut cch = CCH::new(path);
     cch.customize(true);
 
-    let q = 100000;
+    let q = 30000;
 
     let n = cch.n;
     let mut rng = rand::rng();
@@ -426,22 +426,14 @@ fn main() {
         .map(|_| (rng.random_range(0..n), rng.random_range(0..n)))
         .collect_vec();
 
-    // Filter for non-inf queries.
-    info!("Filter for finite queries..");
-    let finite_queries = queries
-        .iter()
-        .cloned()
-        .filter(|&(s, t)| cch.query(s, t) < W_INF)
-        .collect_vec();
-
-    info!("{} finite queries..", finite_queries.len());
+    info!("{} queries..", queries.len());
     let start = std::time::Instant::now();
-    for (s, t) in &finite_queries {
+    for (s, t) in &queries {
         cch.query(*s, *t);
     }
     let elapsed = start.elapsed();
     info!(
-        "Queries.. done {} ns/q",
-        elapsed.as_nanos() / finite_queries.len() as u128
+        "Queries.. done {} us/q",
+        elapsed.as_nanos() / queries.len() as u128 / 1000
     );
 }
