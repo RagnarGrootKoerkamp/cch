@@ -32,6 +32,8 @@ struct Node {
     // rank: u32,
     /// Index into list of edges of the first outgoing edge.
     first_edge_idx: EdgeId,
+    /// Index into list of ranges of the first outgoing edge range.
+    first_range_idx: EdgeId,
     /// Parent ID.
     parent: NodeId,
 }
@@ -90,6 +92,8 @@ pub struct CCH {
     nodes: Vec<Node>,
     /// The undirected CCH edges.
     edges: Vec<HalfEdge>,
+    /// Ranges of edges
+    edge_ranges: Vec<Range<u32>>,
 
     /// Up and down distance cache to each node for queries.
     dist: Vec<[Weight; 2]>,
@@ -222,6 +226,7 @@ impl CCH {
                 assert_eq!(nbs.len(), 0);
                 nodes.push(Node {
                     first_edge_idx: edges.len() as u32,
+                    first_range_idx: 0,
                     parent: INVALID_ID,
                 });
                 break;
@@ -231,6 +236,7 @@ impl CCH {
 
             nodes.push(Node {
                 first_edge_idx: edges.len() as u32,
+                first_range_idx: 0,
                 parent,
             });
 
@@ -247,6 +253,7 @@ impl CCH {
 
         nodes.push(Node {
             first_edge_idx: edges.len() as u32,
+            first_range_idx: 0,
             parent: INVALID_ID,
         });
 
@@ -264,6 +271,7 @@ impl CCH {
             input_edges,
             nodes,
             edges,
+            edge_ranges: vec![],
             dist: vec![],
         }
     }
@@ -434,6 +442,15 @@ impl CCH {
         //     let edge_range = self.edge_range(u);
         //     self.edges[edge_range].sort_unstable_by_key(|e| e.weight);
         // }
+
+        // Compute edge ranges
+        for u in 0..self.n {
+            let edge_range = self.edge_range(u);
+            let ranges = compress(self.edges[edge_range.clone()].iter().map(|e| e.head));
+            self.nodes[u as usize].first_range_idx = self.edge_ranges.len() as u32;
+            self.edge_ranges.extend(ranges);
+        }
+        self.nodes[self.n as usize].first_range_idx = self.edge_ranges.len() as u32;
     }
 
     #[inline(never)]
