@@ -558,12 +558,17 @@ impl CCH {
                     ..self.nodes[x as usize + 1].first_range_idx as usize];
                 let d = &mut self.dist[dir];
                 let w = &self.edge_weigths[dir];
+
+                let dx_simd = i32x8::splat(dx);
                 for range in ranges {
                     unsafe {
                         let edge_range = range.start as usize..range.end as usize;
                         let mut i0 = edge_range.start;
                         let iend = edge_range.end;
                         let mut v0 = range.first_head;
+
+                        const IDX: i32x8 = i32x8::from_array([1, 2, 3, 4, 5, 6, 7, 8]);
+                        let mut remaining = i32x8::splat((iend - i0) as i32) - IDX;
 
                         loop {
                             let old_dists = i32x8::from_array(
@@ -573,12 +578,13 @@ impl CCH {
                             );
                             let ws =
                                 i32x8::from_array(*w.get_unchecked(i0..i0 + 8).as_array().unwrap());
-                            let new_dists = ws + i32x8::splat(dx);
+                            let new_dists = ws + dx_simd;
                             // Set the last extra lanes to INF so that they won't affect the min.
                             const SIMD_INF: i32x8 = i32x8::splat(W_INF);
-                            const IDX: i32x8 = i32x8::from_array([0, 1, 2, 3, 4, 5, 6, 7]);
-                            let count = i32x8::splat((iend - i0) as i32);
-                            let masked_dists = IDX.simd_lt(count).select(new_dists, SIMD_INF);
+                            let masked_dists = remaining
+                                .simd_ge(i32x8::splat(0))
+                                .select(new_dists, SIMD_INF);
+                            remaining -= i32x8::splat(8);
                             let min_dists = old_dists.simd_min(masked_dists);
                             *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
                                 .as_mut_array()
