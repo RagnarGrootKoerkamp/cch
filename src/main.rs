@@ -590,12 +590,13 @@ impl CCH {
                 for range in ranges {
                     unsafe {
                         let edge_range = range.start as usize..range.end as usize;
-                        let mut i0 = edge_range.start;
+                        let i0 = edge_range.start;
                         let iend = edge_range.end;
-                        assert!((iend - i0) == 8);
-                        let mut v0 = range.first_head;
+                        debug_assert!((iend - i0) == 8);
+                        let v0 = range.first_head;
 
-                        loop {
+                        // A single loop body
+                        {
                             let old_dists = i32x8::from_array(
                                 *d.get_unchecked(v0 as usize..v0 as usize + 8)
                                     .as_array()
@@ -608,13 +609,6 @@ impl CCH {
                             *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
                                 .as_mut_array()
                                 .unwrap() = min_dists.to_array();
-
-                            i0 += 8;
-                            v0 += 8;
-
-                            if i0 >= iend {
-                                break;
-                            }
                         }
                     }
                 }
