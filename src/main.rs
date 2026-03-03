@@ -536,7 +536,7 @@ impl CCH {
                             let e0 = self.edges.get_unchecked(i0);
                             let mut v0 = e0.head;
 
-                            while i0 < iend {
+                            loop {
                                 let old_dists = i32x8::from_array(
                                     *d.get_unchecked(v0 as usize..v0 as usize + 8)
                                         .as_array()
@@ -558,6 +558,10 @@ impl CCH {
 
                                 i0 += 8;
                                 v0 += 8;
+
+                                if i0 >= iend {
+                                    break;
+                                }
                             }
                         }
                     }
