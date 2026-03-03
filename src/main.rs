@@ -93,8 +93,6 @@ impl Edge {
 struct EdgeRange {
     /// Head of the first edge in the range.
     first_head: NodeId,
-    /// First edge index
-    start: EdgeId,
 }
 
 #[derive(epserde::Epserde)]
@@ -582,7 +580,7 @@ impl CCH {
                     let w = &self.edge_weigths[dir];
 
                     let dx_simd = i32x8::splat(dx);
-                    let mut i0 = ranges[0].start as usize;
+                    let mut i0 = edge_range.start as usize;
                     for range in ranges {
                         unsafe {
                             let v0 = range.first_head;
@@ -669,7 +667,6 @@ fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
         if edges[x].head != prev + 1 || (x - start) == 8 {
             ranges.push(EdgeRange {
                 first_head: edges[start].head,
-                start: start as u32,
             });
             start = x;
         }
@@ -677,7 +674,6 @@ fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
     }
     ranges.push(EdgeRange {
         first_head: edges[start].head,
-        start: start as u32,
     });
     // if in_range.len() > 100 {
     //     eprintln!("compress {in_range:?} to {ranges:?}");
