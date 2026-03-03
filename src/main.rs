@@ -1,6 +1,6 @@
 #![feature(iter_array_chunks)]
 use itertools::Itertools;
-use log::{debug, info};
+use log::{debug, info, trace};
 use rand::RngExt;
 use std::path::Path;
 
@@ -119,6 +119,7 @@ impl CCH {
                 for j in first_out[i]..first_out[i + 1] {
                     let head = head[j as usize];
                     let weight = weight[j as usize] as i32;
+                    assert!(weight < W_INF / 2, "weight {weight} is too large");
                     // permute
                     let tail = rank[i as usize];
                     let head = rank[head as usize];
@@ -208,10 +209,12 @@ impl CCH {
 
         // Binary search
         let edge_range = self.edge_range(u);
-        edge_range.start
+        let idx = edge_range.start
             + self.edges[edge_range]
                 .binary_search_by_key(&v, |e| e.head)
-                .unwrap()
+                .unwrap();
+        assert_eq!(self.edges[idx].head, v);
+        idx
     }
 
     #[allow(unused)]
@@ -230,15 +233,17 @@ impl CCH {
         // Copy the input weights into the CCH edges.
         info!("Set weights..");
         for e in std::mem::take(&mut self.input_edges) {
-            let dir = e.dir();
             let (u, v) = e.undirected();
-            self.find_edge_mut(u, v).weight[dir] = e.weight;
+            self.find_edge_mut(u, v).weight[e.dir()] = e.weight;
         }
 
         // For each node from low to high, relax the edges between its upper neighbours.
         info!("Relax upper edges..");
         for u in 0..self.n {
             let edge_range = self.edge_range(u);
+            trace!("relax {u} with {} nbs..", edge_range.len());
+
+            // Relax
             for i in edge_range.clone() {
                 let ux = self.edges[i];
                 let x = ux.head;
@@ -255,7 +260,12 @@ impl CCH {
 
                     for dir in [UP, DOWN] {
                         let xy_relax = ux.weight[dir ^ 1] + uy.weight[dir];
+                        let old = xy.weight[dir];
                         xy.weight[dir] = xy.weight[dir].min(xy_relax);
+                        trace!(
+                            "relax {idx} {x}-{y} dir {dir} from {old} with {xy_relax} to {}",
+                            xy.weight[dir]
+                        );
                     }
                 }
             }
@@ -340,6 +350,7 @@ impl CCH {
             let x = cur[dir];
             num_visited_nodes += 1;
             let dx = self.dist[x as usize][dir];
+            trace!("expand {x} dir {dir} dx {dx}");
             // Distance to a parent can be INF in case edges were pruned.
             if dx < W_INF {
                 num_expanded_nodes += 1;
@@ -357,6 +368,7 @@ impl CCH {
 
             // Go to parent.
             cur[dir] = self.nodes[x as usize].parent;
+            trace!("parent of {x} is {}", cur[dir]);
         }
 
         let mut best_dist = W_INF;
@@ -392,7 +404,7 @@ impl CCH {
             x = self.nodes[x as usize].parent;
         }
 
-        debug!("dists from {s}-{t}: {best_dist}. {num_visited_nodes} visited, {num_pruned} prune, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
+        debug!("dists from {s}-{t}: {best_dist}. {num_visited_nodes} visited, {num_pruned} pruned, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
         best_dist
     }
 }
