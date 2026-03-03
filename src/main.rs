@@ -392,9 +392,7 @@ impl CCH {
                     let v = e.head;
                     let dv = self.dist[v as usize][dir];
                     let new_dist = dx + e.weight[dir];
-                    if new_dist < dv {
-                        self.dist[v as usize][dir] = new_dist;
-                    }
+                    self.dist[v as usize][dir] = dv.min(new_dist);
                 }
                 // cleanup for reuse
                 self.dist[x as usize][dir] = W_INF;
@@ -426,9 +424,7 @@ impl CCH {
                         let v = e.head;
                         let dv = self.dist[v as usize][dir];
                         let new_dist = dx + e.weight[dir];
-                        if new_dist < dv {
-                            self.dist[v as usize][dir] = new_dist;
-                        }
+                        self.dist[v as usize][dir] = dv.min(new_dist);
                     }
                     // cleanup for reuse
                     self.dist[x as usize][dir] = W_INF;
@@ -450,7 +446,7 @@ fn main() {
     let mut cch = CCH::new(path);
     cch.customize(true);
 
-    let q = 10000;
+    let q = 300000;
 
     let n = cch.n;
     let mut rng = rand::rng();
