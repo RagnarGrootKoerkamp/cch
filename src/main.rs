@@ -1,4 +1,6 @@
 #![feature(iter_array_chunks)]
+use epserde::deser::Deserialize;
+use epserde::ser::Serialize;
 use itertools::Itertools;
 use log::{debug, info, trace};
 use rand::RngExt;
@@ -22,7 +24,9 @@ fn read_vec(path: &Path) -> Vec<u32> {
         .collect()
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, epserde::Epserde)]
+#[repr(C)]
+#[epserde_zero_copy]
 struct Node {
     // rank is implicit via ID (=index) of self.
     // rank: u32,
@@ -37,7 +41,9 @@ const DOWN: usize = 1;
 
 /// Edge goes to `head`.
 /// Tail is implicit via `first_out` of the source node.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, epserde::Epserde)]
+#[repr(C)]
+#[epserde_zero_copy]
 struct HalfEdge {
     /// Edge goes to `head`.
     head: NodeId,
@@ -48,6 +54,9 @@ struct HalfEdge {
 }
 
 /// Edge from `tail` to `head`.
+#[derive(Clone, Copy, epserde::Epserde)]
+#[repr(C)]
+#[epserde_zero_copy]
 struct Edge {
     tail: NodeId,
     head: NodeId,
@@ -69,6 +78,7 @@ impl Edge {
     }
 }
 
+#[derive(epserde::Epserde)]
 pub struct CCH {
     /// The number of nodes
     n: u32,
@@ -137,7 +147,7 @@ impl CCH {
             }
         };
 
-        {
+        if true {
             // Slightly reduced chordal closure to compute parents.
             info!("Compute parents..");
             let mut parents = vec![INVALID_ID; n];
@@ -254,8 +264,23 @@ impl CCH {
             input_edges,
             nodes,
             edges,
-            dist: vec![[W_INF; 2]; n as usize],
+            dist: vec![],
         }
+    }
+
+    #[allow(unused)]
+    fn save(&mut self, path: &Path) {
+        info!("Saving..");
+        self.input_edges.clear();
+        self.dist.clear();
+        let mut file = std::fs::File::create(path.with_added_extension("cch")).unwrap();
+        unsafe { self.serialize(&mut file).unwrap() };
+    }
+    #[allow(unused)]
+    fn read(path: &Path) -> Self {
+        info!("Reading..");
+        let mut path = path.with_added_extension("cch");
+        unsafe { Self::load_full(&path).unwrap() }
     }
 
     fn edge_range(&self, u: NodeId) -> std::ops::Range<usize> {
@@ -413,6 +438,9 @@ impl CCH {
 
     #[inline(never)]
     fn query(&mut self, s: NodeId, t: NodeId) -> Weight {
+        if self.dist.is_empty() {
+            self.dist = vec![[W_INF; 2]; self.nodes.len()];
+        }
         self.dist[s as usize][UP] = 0;
         self.dist[t as usize][DOWN] = 0;
 
@@ -498,10 +526,18 @@ fn main() {
     env_logger::init();
 
     let path = Path::new("graphs/europe");
-    let mut cch = CCH::new(path);
-    cch.customize(true);
+    let mut cch = if false {
+        // write
+        let mut cch = CCH::new(path);
+        cch.customize(true);
+        cch.save(path);
+        cch
+    } else {
+        // read
+        CCH::read(path)
+    };
 
-    let q = 30000;
+    let q = 300000;
 
     let n = cch.n;
     let mut rng = rand::rng();
