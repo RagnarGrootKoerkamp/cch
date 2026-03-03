@@ -35,7 +35,6 @@ struct Node {
     first_range_idx: u32,
 }
 
-type DIR = usize;
 const UP: usize = 0;
 const DOWN: usize = 1;
 
@@ -96,6 +95,9 @@ pub struct CCH {
     /// Ranges of consecutive neighbours.
     /// Only valid before compactification.
     edge_ranges: Vec<HalfEdgeRange>,
+
+    /// Up and down distance cache to each node for queries.
+    dist: Vec<[Weight; 2]>,
 }
 
 impl CCH {
@@ -222,6 +224,7 @@ impl CCH {
             nodes,
             edges,
             edge_ranges,
+            dist: vec![[W_INF; 2]; n as usize],
         }
     }
 
@@ -365,50 +368,75 @@ impl CCH {
         self.nodes[self.n as usize].first_edge_idx = i as u32;
     }
 
-    fn dists(&self, s: NodeId, dir: DIR) -> Vec<Weight> {
-        let mut dists = vec![W_INF; self.nodes.len()];
-        dists[s as usize] = 0;
+    fn query(&mut self, s: NodeId, t: NodeId) -> Weight {
+        self.dist[s as usize][UP] = 0;
+        self.dist[s as usize][DOWN] = 0;
 
         let mut num_visited_nodes = 0;
         let mut num_expanded_nodes = 0;
         let mut num_edges = 0;
 
-        let mut u = s;
-        while u != INVALID_ID {
+        // Process the smaller of s and t.
+        let mut cur = [s, t];
+        while cur[UP] != cur[DOWN] {
+            let dir = if cur[UP] < cur[DOWN] { UP } else { DOWN };
+            let x = cur[dir];
             num_visited_nodes += 1;
-            let du = dists[u as usize];
+            let dx = self.dist[x as usize][dir];
             // Distance to a parent can be INF in case edges were pruned.
-            if du < W_INF {
-                // eprintln!("u {u} du {du}");
+            if dx < W_INF {
                 num_expanded_nodes += 1;
-                let edge_range = self.edge_range(u);
+                let edge_range = self.edge_range(x);
                 for e in &self.edges[edge_range] {
                     num_edges += 1;
                     let v = e.head;
-                    let dv = dists[v as usize];
-                    let new_dist = du + e.weight[dir];
+                    let dv = self.dist[v as usize][dir];
+                    let new_dist = dx + e.weight[dir];
                     if new_dist < dv {
-                        dists[v as usize] = new_dist;
+                        self.dist[v as usize][dir] = new_dist;
                     }
                 }
                 // cleanup for reuse
-                // dists[u as usize] = W_INF;
+                self.dist[x as usize][dir] = W_INF;
             }
 
             // Go to parent.
-            u = self.nodes[u as usize].parent;
+            cur[dir] = self.nodes[x as usize].parent;
         }
-        debug!("dists from {s} in dir {dir}: {num_visited_nodes} visited, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
 
-        dists
-    }
-    pub fn query_full(&self, s: NodeId, t: NodeId) -> Weight {
-        debug!("query {s} {t}");
-        let ds = self.dists(s, UP);
-        let dt = self.dists(t, DOWN);
-        let dist = (0..self.nodes.len()).map(|i| ds[i] + dt[i]).min().unwrap();
-        debug!("dist {s}-{t}: {dist}");
-        dist
+        let mut best_dist = W_INF;
+
+        // Advance both vertices
+        let mut x = cur[UP];
+        while x != INVALID_ID {
+            best_dist = best_dist.min(self.dist[x as usize][UP] + self.dist[x as usize][DOWN]);
+
+            for dir in [UP, DOWN] {
+                num_visited_nodes += 1;
+                let dx = self.dist[x as usize][dir];
+                // Distance to a parent can be INF in case edges were pruned.
+                if dx < W_INF {
+                    num_expanded_nodes += 1;
+                    let edge_range = self.edge_range(x);
+                    for e in &self.edges[edge_range] {
+                        num_edges += 1;
+                        let v = e.head;
+                        let dv = self.dist[v as usize][dir];
+                        let new_dist = dx + e.weight[dir];
+                        if new_dist < dv {
+                            self.dist[v as usize][dir] = new_dist;
+                        }
+                    }
+                    // cleanup for reuse
+                    self.dist[x as usize][dir] = W_INF;
+                }
+            }
+            // Go to parent.
+            x = self.nodes[x as usize].parent;
+        }
+
+        debug!("dists from {s}-{t}: {best_dist}. {num_visited_nodes} visited, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
+        best_dist
     }
 }
 
@@ -419,15 +447,17 @@ fn main() {
     let mut cch = CCH::new(path);
     cch.customize(true);
 
-    // Generate 1000 random query pairs.
-    let q = 100;
+    let q = 10000;
 
     let n = cch.n;
     let mut rng = rand::rng();
     let queries = (0..q).map(|_| (rng.random_range(0..n), rng.random_range(0..n)));
 
     info!("Queries..");
+    let start = std::time::Instant::now();
     for (s, t) in queries {
-        cch.query_full(s, t);
+        cch.query(s, t);
     }
+    let elapsed = start.elapsed();
+    info!("Queries.. done {} ns/q", elapsed.as_nanos() / q);
 }
