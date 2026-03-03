@@ -84,7 +84,9 @@ impl Edge {
     }
 }
 
-/// A range of EdgeIds with consecutive `head` values.
+/// A range of 8 EdgeIds with consecutive `head` values.
+///
+/// (end is omitted because it's always exactly 8)
 #[derive(Debug, Clone, Copy, epserde::Epserde)]
 #[repr(C)]
 #[epserde_zero_copy]
@@ -93,8 +95,6 @@ struct EdgeRange {
     first_head: NodeId,
     /// First edge index
     start: EdgeId,
-    /// Exclusive last edge index
-    end: EdgeId,
 }
 
 #[derive(epserde::Epserde)]
@@ -524,12 +524,6 @@ impl CCH {
             let edge_range = self.edge_range(u);
             // let ranges = compress(self.edges[edge_range.clone()].iter().map(|e| e.head));
             let ranges = compress(&self.edges, edge_range.clone());
-            for range in &ranges {
-                assert!(
-                    (range.end - range.start) == 8,
-                    "found range {range:?} of unexpected len"
-                );
-            }
             self.nodes[u as usize].first_range_idx = self.edge_ranges.len() as u32;
             self.edge_ranges.extend(ranges);
         }
@@ -580,35 +574,36 @@ impl CCH {
             if dx < W_INF {
                 num_expanded_nodes += 1;
                 let edge_range = self.edge_range(x);
-                num_edges += edge_range.len();
-                let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
-                    ..self.nodes[x as usize + 1].first_range_idx as usize];
-                let d = &mut self.dist[dir];
-                let w = &self.edge_weigths[dir];
+                if !edge_range.is_empty() {
+                    num_edges += edge_range.len();
+                    let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
+                        ..self.nodes[x as usize + 1].first_range_idx as usize];
+                    let d = &mut self.dist[dir];
+                    let w = &self.edge_weigths[dir];
 
-                let dx_simd = i32x8::splat(dx);
-                for range in ranges {
-                    unsafe {
-                        let edge_range = range.start as usize..range.end as usize;
-                        let i0 = edge_range.start;
-                        let iend = edge_range.end;
-                        debug_assert!((iend - i0) == 8);
-                        let v0 = range.first_head;
+                    let dx_simd = i32x8::splat(dx);
+                    let mut i0 = ranges[0].start as usize;
+                    for range in ranges {
+                        unsafe {
+                            let v0 = range.first_head;
 
-                        // A single loop body
-                        {
-                            let old_dists = i32x8::from_array(
-                                *d.get_unchecked(v0 as usize..v0 as usize + 8)
-                                    .as_array()
-                                    .unwrap(),
-                            );
-                            let ws =
-                                i32x8::from_array(*w.get_unchecked(i0..i0 + 8).as_array().unwrap());
-                            let new_dists = ws + dx_simd;
-                            let min_dists = old_dists.simd_min(new_dists);
-                            *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
-                                .as_mut_array()
-                                .unwrap() = min_dists.to_array();
+                            // A single loop body
+                            {
+                                let old_dists = i32x8::from_array(
+                                    *d.get_unchecked(v0 as usize..v0 as usize + 8)
+                                        .as_array()
+                                        .unwrap(),
+                                );
+                                let ws = i32x8::from_array(
+                                    *w.get_unchecked(i0..i0 + 8).as_array().unwrap(),
+                                );
+                                let new_dists = ws + dx_simd;
+                                let min_dists = old_dists.simd_min(new_dists);
+                                *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
+                                    .as_mut_array()
+                                    .unwrap() = min_dists.to_array();
+                            }
+                            i0 += 8;
                         }
                     }
                 }
@@ -675,7 +670,6 @@ fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
             ranges.push(EdgeRange {
                 first_head: edges[start].head,
                 start: start as u32,
-                end: x as u32,
             });
             start = x;
         }
@@ -684,7 +678,6 @@ fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
     ranges.push(EdgeRange {
         first_head: edges[start].head,
         start: start as u32,
-        end: range.end as u32,
     });
     // if in_range.len() > 100 {
     //     eprintln!("compress {in_range:?} to {ranges:?}");
