@@ -554,58 +554,41 @@ impl CCH {
                 num_expanded_nodes += 1;
                 let edge_range = self.edge_range(x);
                 num_edges += edge_range.len();
-                if false {
-                    // scalar
-                    trace!(
-                        "expand {num_expanded_nodes}: {x} dir {dir} dx {dx} nbs {} {:?}",
-                        edge_range.len(),
-                        compress(&self.edges, edge_range.clone())
-                    );
-                    for e in &self.edges[edge_range] {
-                        num_edges += 1;
-                        let v = e.head;
-                        let dv = self.dist[dir][v as usize];
-                        let new_dist = dx + e.weight[dir];
-                        self.dist[dir][v as usize] = dv.min(new_dist);
-                    }
-                } else {
-                    let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
-                        ..self.nodes[x as usize + 1].first_range_idx as usize];
-                    let d = &mut self.dist[dir];
-                    let w = &self.edge_weigths[dir];
-                    for range in ranges {
-                        unsafe {
-                            let edge_range = range.start as usize..range.end as usize;
-                            let mut i0 = edge_range.start;
-                            let iend = edge_range.end;
-                            let mut v0 = range.first_head;
+                let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
+                    ..self.nodes[x as usize + 1].first_range_idx as usize];
+                let d = &mut self.dist[dir];
+                let w = &self.edge_weigths[dir];
+                for range in ranges {
+                    unsafe {
+                        let edge_range = range.start as usize..range.end as usize;
+                        let mut i0 = edge_range.start;
+                        let iend = edge_range.end;
+                        let mut v0 = range.first_head;
 
-                            loop {
-                                let old_dists = i32x8::from_array(
-                                    *d.get_unchecked(v0 as usize..v0 as usize + 8)
-                                        .as_array()
-                                        .unwrap(),
-                                );
-                                let ws = i32x8::from_array(
-                                    *w.get_unchecked(i0..i0 + 8).as_array().unwrap(),
-                                );
-                                let new_dists = ws + i32x8::splat(dx);
-                                // Set the last extra lanes to INF so that they won't affect the min.
-                                const SIMD_INF: i32x8 = i32x8::splat(W_INF);
-                                const IDX: i32x8 = i32x8::from_array([0, 1, 2, 3, 4, 5, 6, 7]);
-                                let count = i32x8::splat((iend - i0) as i32);
-                                let masked_dists = IDX.simd_lt(count).select(new_dists, SIMD_INF);
-                                let min_dists = old_dists.simd_min(masked_dists);
-                                *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
-                                    .as_mut_array()
-                                    .unwrap() = min_dists.to_array();
+                        loop {
+                            let old_dists = i32x8::from_array(
+                                *d.get_unchecked(v0 as usize..v0 as usize + 8)
+                                    .as_array()
+                                    .unwrap(),
+                            );
+                            let ws =
+                                i32x8::from_array(*w.get_unchecked(i0..i0 + 8).as_array().unwrap());
+                            let new_dists = ws + i32x8::splat(dx);
+                            // Set the last extra lanes to INF so that they won't affect the min.
+                            const SIMD_INF: i32x8 = i32x8::splat(W_INF);
+                            const IDX: i32x8 = i32x8::from_array([0, 1, 2, 3, 4, 5, 6, 7]);
+                            let count = i32x8::splat((iend - i0) as i32);
+                            let masked_dists = IDX.simd_lt(count).select(new_dists, SIMD_INF);
+                            let min_dists = old_dists.simd_min(masked_dists);
+                            *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
+                                .as_mut_array()
+                                .unwrap() = min_dists.to_array();
 
-                                i0 += 8;
-                                v0 += 8;
+                            i0 += 8;
+                            v0 += 8;
 
-                                if i0 >= iend {
-                                    break;
-                                }
+                            if i0 >= iend {
+                                break;
                             }
                         }
                     }
@@ -639,7 +622,7 @@ fn main() {
         CCH::read(path)
     };
 
-    let q = 10000;
+    let q = 30000;
 
     let n = cch.n;
     let mut rng = rand::rng();
