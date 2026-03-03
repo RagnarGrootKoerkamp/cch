@@ -454,6 +454,37 @@ impl CCH {
         //     self.edges[edge_range].sort_unstable_by_key(|e| e.weight);
         // }
 
+        // Add dummy INF edges if neighbours are at most GAP apart.
+        info!("Add dummy edges.. Starting with {} edges", self.edges.len());
+        const GAP: u32 = 4;
+        let mut new_edges = vec![];
+        for u in 0..self.n {
+            let edge_range = self.edge_range(u);
+            self.nodes[u as usize].first_edge_idx = new_edges.len() as u32;
+            if edge_range.is_empty() {
+                continue;
+            }
+            let mut last_v = self.edges[edge_range.start].head;
+            for i in edge_range {
+                let e = self.edges[i];
+                let v = e.head;
+                if v <= last_v + GAP {
+                    for v_new in last_v + 1..v {
+                        new_edges.push(HalfEdge {
+                            head: v_new,
+                            weight: [W_INF; 2],
+                            deleted: false,
+                        });
+                    }
+                }
+                new_edges.push(e);
+                last_v = v;
+            }
+        }
+        info!("End with {} edges", new_edges.len());
+        self.nodes[self.n as usize].first_edge_idx = new_edges.len() as u32;
+        self.edges = new_edges;
+
         // Compute edge ranges
         for u in 0..self.n {
             let edge_range = self.edge_range(u);
@@ -462,6 +493,7 @@ impl CCH {
             self.nodes[u as usize].first_range_idx = self.edge_ranges.len() as u32;
             self.edge_ranges.extend(ranges);
         }
+        info!("Num ranges: {:>8}", self.edge_ranges.len());
         self.nodes[self.n as usize].first_range_idx = self.edge_ranges.len() as u32;
         // Fill edge weights
         for e in &self.edges {
