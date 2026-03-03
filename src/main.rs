@@ -375,6 +375,7 @@ impl CCH {
         let mut num_visited_nodes = 0;
         let mut num_expanded_nodes = 0;
         let mut num_edges = 0;
+        let mut num_pruned = 0;
 
         // Process the smaller of s and t.
         let mut cur = [s, t];
@@ -413,6 +414,7 @@ impl CCH {
                 num_visited_nodes += 1;
                 let dx = self.dist[x as usize][dir];
                 if dx >= best_dist {
+                    num_pruned += 1;
                     continue;
                 }
                 // Distance to a parent can be INF in case edges were pruned.
@@ -434,7 +436,7 @@ impl CCH {
             x = self.nodes[x as usize].parent;
         }
 
-        debug!("dists from {s}-{t}: {best_dist}. {num_visited_nodes} visited, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
+        debug!("dists from {s}-{t}: {best_dist}. {num_visited_nodes} visited, {num_pruned} prune, {num_expanded_nodes} expanded, {num_edges} edges relaxed");
         best_dist
     }
 }
