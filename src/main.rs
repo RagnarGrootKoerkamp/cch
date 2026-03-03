@@ -30,9 +30,6 @@ struct Node {
     first_edge_idx: EdgeId,
     /// Parent ID.
     parent: NodeId,
-
-    /// Index into the list of ranges.
-    first_range_idx: u32,
 }
 
 const UP: usize = 0;
@@ -48,14 +45,6 @@ struct HalfEdge {
     weight: [Weight; 2],
     /// For use during perfect customization.
     deleted: bool,
-}
-
-#[derive(Debug)]
-struct HalfEdgeRange {
-    /// The first NodeId of an interval.
-    start: NodeId,
-    /// The edge index of the first edge of the interval.
-    start_edge_idx: EdgeId,
 }
 
 /// Edge from `tail` to `head`.
@@ -91,10 +80,6 @@ pub struct CCH {
     nodes: Vec<Node>,
     /// The undirected CCH edges.
     edges: Vec<HalfEdge>,
-
-    /// Ranges of consecutive neighbours.
-    /// Only valid before compactification.
-    edge_ranges: Vec<HalfEdgeRange>,
 
     /// Up and down distance cache to each node for queries.
     dist: Vec<[Weight; 2]>,
@@ -148,7 +133,6 @@ impl CCH {
         // The parent of each node. Computed during chordal completion.
         let mut nodes = vec![];
         let mut edges = vec![];
-        let mut edge_ranges = vec![];
 
         // Chordal closure: the upper-context of each node is a clique.
         info!("Chordal closure..");
@@ -161,7 +145,6 @@ impl CCH {
                 nodes.push(Node {
                     first_edge_idx: edges.len() as u32,
                     parent: INVALID_ID,
-                    first_range_idx: edge_ranges.len() as u32,
                 });
                 break;
             }
@@ -171,26 +154,7 @@ impl CCH {
             nodes.push(Node {
                 first_edge_idx: edges.len() as u32,
                 parent,
-                first_range_idx: edge_ranges.len() as u32,
             });
-
-            // add up-edge ranges
-            edge_ranges.push(HalfEdgeRange {
-                start: nbs[0],
-                start_edge_idx: edges.len() as u32,
-            });
-            edge_ranges.extend(nbs.iter().enumerate().tuple_windows().filter_map(
-                |((_i, x), (i2, y))| {
-                    if *y != *x + 1 {
-                        Some(HalfEdgeRange {
-                            start: *y,
-                            start_edge_idx: (edges.len() + i2) as u32,
-                        })
-                    } else {
-                        None
-                    }
-                },
-            ));
 
             // store up-edges of u
             edges.extend(nbs.iter().map(|&head| HalfEdge {
@@ -206,7 +170,6 @@ impl CCH {
         nodes.push(Node {
             first_edge_idx: edges.len() as u32,
             parent: INVALID_ID,
-            first_range_idx: edge_ranges.len() as u32,
         });
 
         for i in 0..n as u32 {
@@ -216,14 +179,12 @@ impl CCH {
         info!("n: {n}");
         info!("nodes len: {}", nodes.len());
         info!("edges len: {}", edges.len());
-        info!("ranges:    {}", edge_ranges.len());
 
         Self {
             n: n as u32,
             input_edges,
             nodes,
             edges,
-            edge_ranges,
             dist: vec![[W_INF; 2]; n as usize],
         }
     }
@@ -231,12 +192,6 @@ impl CCH {
     fn edge_range(&self, u: NodeId) -> std::ops::Range<usize> {
         let i = self.nodes[u as usize].first_edge_idx as usize;
         let j = self.nodes[u as usize + 1].first_edge_idx as usize;
-        i..j
-    }
-
-    fn edge_range_range(&self, u: NodeId) -> std::ops::Range<usize> {
-        let i = self.nodes[u as usize].first_range_idx as usize;
-        let j = self.nodes[u as usize + 1].first_range_idx as usize;
         i..j
     }
 
@@ -252,20 +207,11 @@ impl CCH {
         //         .unwrap();
 
         // Binary search
-        // let edge_range = self.edge_range(u);
-        // edge_range.start
-        //     + self.edges[edge_range]
-        //         .binary_search_by_key(&v, |e| e.head)
-        //         .unwrap()
-
-        // Binary search consecutive ranges
-        let edge_range_range = self.edge_range_range(u);
-        let range_idx = edge_range_range.start
-            + self.edge_ranges[edge_range_range]
-                .binary_search_by_key(&v, |range| range.start)
-                .unwrap_or_else(|err| err - 1);
-        let range = &self.edge_ranges[range_idx as usize];
-        (range.start_edge_idx + v - range.start) as usize
+        let edge_range = self.edge_range(u);
+        edge_range.start
+            + self.edges[edge_range]
+                .binary_search_by_key(&v, |e| e.head)
+                .unwrap()
     }
 
     #[allow(unused)]
