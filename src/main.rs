@@ -7,10 +7,7 @@ use rand::RngExt;
 use std::{
     ops::Range,
     path::Path,
-    simd::{
-        cmp::{SimdOrd, SimdPartialOrd},
-        i32x8, Select,
-    },
+    simd::{cmp::SimdOrd, i32x8},
 };
 
 type NodeId = u32;
@@ -529,7 +526,7 @@ impl CCH {
             let ranges = compress(&self.edges, edge_range.clone());
             for range in &ranges {
                 assert!(
-                    (range.end - range.start) % 8 == 0,
+                    (range.end - range.start) == 8,
                     "found range {range:?} of unexpected len"
                 );
             }
@@ -595,10 +592,8 @@ impl CCH {
                         let edge_range = range.start as usize..range.end as usize;
                         let mut i0 = edge_range.start;
                         let iend = edge_range.end;
+                        assert!((iend - i0) == 8);
                         let mut v0 = range.first_head;
-
-                        const IDX: i32x8 = i32x8::from_array([1, 2, 3, 4, 5, 6, 7, 8]);
-                        let mut remaining = i32x8::splat((iend - i0) as i32) - IDX;
 
                         loop {
                             let old_dists = i32x8::from_array(
@@ -609,13 +604,7 @@ impl CCH {
                             let ws =
                                 i32x8::from_array(*w.get_unchecked(i0..i0 + 8).as_array().unwrap());
                             let new_dists = ws + dx_simd;
-                            // Set the last extra lanes to INF so that they won't affect the min.
-                            const SIMD_INF: i32x8 = i32x8::splat(W_INF);
-                            let masked_dists = remaining
-                                .simd_ge(i32x8::splat(0))
-                                .select(new_dists, SIMD_INF);
-                            remaining -= i32x8::splat(8);
-                            let min_dists = old_dists.simd_min(masked_dists);
+                            let min_dists = old_dists.simd_min(new_dists);
                             *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
                                 .as_mut_array()
                                 .unwrap() = min_dists.to_array();
@@ -688,7 +677,7 @@ fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
     };
     let mut prev = edges[start].head;
     for x in range.clone() {
-        if edges[x].head != prev + 1 {
+        if edges[x].head != prev + 1 || (x - start) == 8 {
             ranges.push(EdgeRange {
                 first_head: edges[start].head,
                 start: start as u32,
