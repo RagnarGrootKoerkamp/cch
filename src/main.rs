@@ -414,6 +414,9 @@ impl CCH {
             for dir in [UP, DOWN] {
                 num_visited_nodes += 1;
                 let dx = self.dist[x as usize][dir];
+                if dx >= best_dist {
+                    continue;
+                }
                 // Distance to a parent can be INF in case edges were pruned.
                 if dx < W_INF {
                     num_expanded_nodes += 1;
