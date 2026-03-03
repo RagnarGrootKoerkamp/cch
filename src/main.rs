@@ -87,6 +87,19 @@ impl Edge {
     }
 }
 
+/// A range of EdgeIds with consecutive `head` values.
+#[derive(Debug, Clone, Copy, epserde::Epserde)]
+#[repr(C)]
+#[epserde_zero_copy]
+struct EdgeRange {
+    /// Head of the first edge in the range.
+    first_head: NodeId,
+    /// First edge index
+    start: EdgeId,
+    /// Exclusive last edge index
+    end: EdgeId,
+}
+
 #[derive(epserde::Epserde)]
 pub struct CCH {
     /// The number of nodes
@@ -100,7 +113,7 @@ pub struct CCH {
     /// The undirected CCH edges.
     edges: Vec<HalfEdge>,
     /// Ranges of edges
-    edge_ranges: Vec<Range<u32>>,
+    edge_ranges: Vec<EdgeRange>,
     /// Flattened edge weights
     edge_weigths: [Vec<Weight>; 2],
 
@@ -565,8 +578,7 @@ impl CCH {
                             let edge_range = range.start as usize..range.end as usize;
                             let mut i0 = edge_range.start;
                             let iend = edge_range.end;
-                            let e0 = self.edges.get_unchecked(i0);
-                            let mut v0 = e0.head;
+                            let mut v0 = range.first_head;
 
                             loop {
                                 let old_dists = i32x8::from_array(
@@ -649,7 +661,7 @@ fn main() {
 
 /// Takes a range of EdgeId and splits it into multiple ranges of EdgeId
 /// where the neighbours are consecutive.
-fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<Range<EdgeId>> {
+fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
     // let in_range = range.clone();
     let mut ranges = vec![];
     let Some(mut start) = range.next() else {
@@ -658,12 +670,20 @@ fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<Range<EdgeId>
     let mut prev = edges[start].head;
     for x in range.clone() {
         if edges[x].head != prev + 1 {
-            ranges.push(start as u32..x as u32);
+            ranges.push(EdgeRange {
+                first_head: edges[start].head,
+                start: start as u32,
+                end: x as u32,
+            });
             start = x;
         }
         prev = edges[x].head;
     }
-    ranges.push(start as u32..range.end as u32);
+    ranges.push(EdgeRange {
+        first_head: edges[start].head,
+        start: start as u32,
+        end: range.end as u32,
+    });
     // if in_range.len() > 100 {
     //     eprintln!("compress {in_range:?} to {ranges:?}");
     // }
