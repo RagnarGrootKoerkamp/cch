@@ -111,8 +111,11 @@ pub struct CCH {
     /// The number of nodes
     n: u32,
 
-    /// The input edges and weights after permuting nodes by `order`.
+    /// The input edges and weights, without any permutation applied to them.
     input_edges: Vec<Edge>,
+
+    /// Input node `i` maps to internal ID `rank[i]`.
+    rank: Vec<NodeId>,
 
     /// The sorted nodes and their parents.
     nodes: Vec<Node>,
@@ -134,6 +137,8 @@ impl CCH {
         let n;
         let mut input_edges = vec![];
         let mut adj;
+        // the internal ID of each node.
+        let mut rank;
         {
             // Read files.
             info!("Reading..");
@@ -147,7 +152,7 @@ impl CCH {
 
             // Compute target rank of each node, ie inverse of `order`.
             info!("Rank..");
-            let rank = {
+            rank = {
                 let mut rank = vec![0; n];
                 for (i, &node) in order.iter().enumerate() {
                     rank[node as usize] = i as u32;
@@ -163,11 +168,15 @@ impl CCH {
                     let head = head[j as usize];
                     let weight = weight[j as usize] as i32;
                     assert!(weight < W_INF / 2, "weight {weight} is too large");
+                    input_edges.push(Edge {
+                        tail: i as u32,
+                        head,
+                        weight,
+                    });
+
                     // permute
                     let tail = rank[i as usize];
                     let head = rank[head as usize];
-                    input_edges.push(Edge { tail, head, weight });
-
                     let (u, v) = (tail.min(head), tail.max(head));
                     adj[u as usize].push(v);
                 }
@@ -218,23 +227,23 @@ impl CCH {
             assert_eq!(new_order.len(), n);
 
             info!("Apply permutation..");
-            let mut rank = vec![0; n];
+            let mut new_rank = vec![0; n];
             for (i, &node) in new_order.iter().enumerate() {
-                rank[node as usize] = i as u32;
+                new_rank[node as usize] = i as u32;
             }
             // remap all nodes.
             let mut new_adj = vec![Vec::new(); n];
             for u in 0..n as u32 {
-                let new_u = rank[u as usize];
+                let new_u = new_rank[u as usize];
                 for &v in &adj[u as usize] {
-                    let new_v = rank[v as usize];
+                    let new_v = new_rank[v as usize];
                     new_adj[new_u as usize].push(new_v);
                 }
             }
 
-            for e in &mut input_edges {
-                e.tail = rank[e.tail as usize];
-                e.head = rank[e.head as usize];
+            // Update total permutation on input IDs
+            for i in 0..n {
+                rank[i] = new_rank[rank[i] as usize];
             }
 
             adj = new_adj;
@@ -315,6 +324,7 @@ impl CCH {
         Self {
             n: n as u32,
             input_edges,
+            rank,
             nodes,
             edges,
             edge_weigths: [vec![], vec![]],
@@ -408,7 +418,9 @@ impl CCH {
     fn customize(&mut self, perfect: bool) {
         // Copy the input weights into the CCH edges.
         info!("Set weights..");
-        for e in std::mem::take(&mut self.input_edges) {
+        for mut e in std::mem::take(&mut self.input_edges) {
+            e.tail = self.rank[e.tail as usize];
+            e.head = self.rank[e.head as usize];
             let (u, v) = e.undirected();
             self.find_edge_mut(u, v).weight[e.dir()] = e.weight;
         }
@@ -598,6 +610,10 @@ impl CCH {
         if self.dist[0].is_empty() {
             self.dist = [vec![W_INF; self.nodes.len()], vec![W_INF; self.nodes.len()]];
         }
+
+        let s = self.rank[s as usize];
+        let t = self.rank[t as usize];
+
         self.dist[UP][s as usize] = 0;
         self.dist[DOWN][t as usize] = 0;
 
