@@ -484,13 +484,13 @@ impl CCH {
                         // u < x < y
                         for dir in [UP, DOWN] {
                             let ux_relax = uy.weight[dir] + xy.weight[dir ^ 1];
-                            if ux_relax < ux.weight[dir] {
+                            if ux_relax <= ux.weight[dir] {
                                 let ux = &mut self.edges[i];
                                 ux.weight[dir] = ux_relax;
                                 ux.deleted[dir] = true;
                             }
                             let uy_relax = ux.weight[dir] + xy.weight[dir];
-                            if uy_relax < uy.weight[dir] {
+                            if uy_relax <= uy.weight[dir] {
                                 let uy = &mut self.edges[j];
                                 uy.weight[dir] = uy_relax;
                                 uy.deleted[dir] = true;
