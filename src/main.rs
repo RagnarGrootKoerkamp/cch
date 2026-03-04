@@ -638,77 +638,98 @@ impl CCH {
 
         // Process the smaller of s and t.
         let mut cur = [s, t];
-        let mut best_dist = W_INF;
-        while cur[1] != INVALID_ID {
-            if cur[0] == cur[1] {
-                best_dist = best_dist
-                    .min(self.dist[UP][cur[0] as usize] + self.dist[DOWN][cur[1] as usize]);
-            }
+        while cur[0] != cur[1] {
             let dir = if cur[UP] <= cur[DOWN] { UP } else { DOWN };
-            let x = cur[dir];
             num_visited_nodes += 1;
+            let x = cur[dir];
             let dx = self.dist[dir][x as usize];
-            if dx >= best_dist {
-                num_pruned += 1;
-                // cleanup for reuse
-                cur[dir] = self.nodes[x as usize].parent;
-                self.dist[dir][x as usize] = W_INF;
-                continue;
-            }
-            // Distance to a parent can be INF in case edges were pruned.
-            if dx < W_INF {
-                num_expanded_nodes += 1;
-                let edge_range = self.edge_range(x);
-                if !edge_range.is_empty() {
-                    // let outdeg = edge_range
-                    //     .clone()
-                    //     .filter(|i| {
-                    //         self.edges[*i].weight[0] < W_INF || self.edges[*i].weight[1] < W_INF
-                    //     })
-                    //     .count();
-                    // trace!("expanding {x} with degree {outdeg} ({})", edge_range.len());
-                    num_edges += edge_range.len();
-                    let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
-                        ..self.nodes[x as usize + 1].first_range_idx as usize];
-                    let d = &mut self.dist[dir];
-                    let w = &self.edge_weigths[dir];
-
-                    let dx_simd = S::splat(dx);
-                    let mut i0 = edge_range.start as usize;
-                    for range in ranges {
-                        unsafe {
-                            let v0 = range.first_head;
-
-                            // A single loop body
-                            {
-                                let old_dists = S::from_array(
-                                    *d.get_unchecked(v0 as usize..v0 as usize + L)
-                                        .as_array()
-                                        .unwrap(),
-                                );
-                                let ws =
-                                    S::from_array(*w.get_unchecked(i0..i0 + L).as_array().unwrap());
-                                let new_dists = ws + dx_simd;
-                                let min_dists = old_dists.simd_min(new_dists);
-                                *d.get_unchecked_mut(v0 as usize..v0 as usize + L)
-                                    .as_mut_array()
-                                    .unwrap() = min_dists.to_array();
-                            }
-                            i0 += 8;
-                        }
-                    }
-                }
-                // cleanup for reuse
-                self.dist[dir][x as usize] = W_INF;
-            }
+            self.expand_node(&mut num_expanded_nodes, &mut num_edges, dir, x, dx);
 
             // Go to parent.
             cur[dir] = self.nodes[x as usize].parent;
-            // trace!("parent of {x} is {}", cur[dir]);
+        }
+        let mut x = cur[0];
+        let mut best_dist = W_INF;
+        while x != INVALID_ID {
+            best_dist = best_dist.min(self.dist[UP][x as usize] + self.dist[DOWN][x as usize]);
+
+            for dir in [UP, DOWN] {
+                num_visited_nodes += 1;
+                let dx = self.dist[dir][x as usize];
+                if dx >= best_dist {
+                    num_pruned += 1;
+                    // cleanup for reuse
+                    self.dist[dir][x as usize] = W_INF;
+                    continue;
+                }
+                self.expand_node(&mut num_expanded_nodes, &mut num_edges, dir, x, dx);
+            }
+            // Go to parent.
+            x = self.nodes[x as usize].parent;
         }
 
         debug!("dists from {s:>10}-{t:>10}: {best_dist:>10}. {num_visited_nodes:>6} visited, {num_pruned:>6} pruned, {num_expanded_nodes:>6} expanded, {num_edges:>6} relaxed, {num_pruned_edges:>6} pruned edges");
         best_dist
+    }
+
+    #[inline(always)]
+    fn expand_node(
+        &mut self,
+        num_expanded_nodes: &mut i32,
+        num_edges: &mut usize,
+        dir: usize,
+        x: u32,
+        dx: i32,
+    ) {
+        // Distance to a parent can be INF in case edges were pruned.
+        if dx >= W_INF {
+            return;
+        }
+        *num_expanded_nodes += 1;
+        let edge_range = self.edge_range(x);
+        if edge_range.is_empty() {
+            self.dist[dir][x as usize] = W_INF;
+            return;
+        }
+        if log::log_enabled!(log::Level::Trace) {
+            let outdeg = edge_range
+                .clone()
+                .filter(|i| self.edges[*i].weight[0] < W_INF || self.edges[*i].weight[1] < W_INF)
+                .count();
+            trace!("expanding {x} with degree {outdeg} ({})", edge_range.len());
+        }
+
+        *num_edges += edge_range.len();
+        let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
+            ..self.nodes[x as usize + 1].first_range_idx as usize];
+        let d = &mut self.dist[dir];
+        let w = &self.edge_weigths[dir];
+
+        let dx_simd = S::splat(dx);
+        let mut i0 = edge_range.start as usize;
+        for range in ranges {
+            unsafe {
+                let v0 = range.first_head;
+
+                // A single loop body
+                {
+                    let old_dists = S::from_array(
+                        *d.get_unchecked(v0 as usize..v0 as usize + L)
+                            .as_array()
+                            .unwrap(),
+                    );
+                    let ws = S::from_array(*w.get_unchecked(i0..i0 + L).as_array().unwrap());
+                    let new_dists = ws + dx_simd;
+                    let min_dists = old_dists.simd_min(new_dists);
+                    *d.get_unchecked_mut(v0 as usize..v0 as usize + L)
+                        .as_mut_array()
+                        .unwrap() = min_dists.to_array();
+                }
+                i0 += 8;
+            }
+        }
+        // cleanup for reuse
+        self.dist[dir][x as usize] = W_INF;
     }
 }
 
