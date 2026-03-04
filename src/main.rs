@@ -602,6 +602,13 @@ impl CCH {
                 num_expanded_nodes += 1;
                 let edge_range = self.edge_range(x);
                 if !edge_range.is_empty() {
+                    // let outdeg = edge_range
+                    //     .clone()
+                    //     .filter(|i| {
+                    //         self.edges[*i].weight[0] < W_INF || self.edges[*i].weight[1] < W_INF
+                    //     })
+                    //     .count();
+                    // trace!("expanding {x} with degree {outdeg} ({})", edge_range.len());
                     num_edges += edge_range.len();
                     let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
                         ..self.nodes[x as usize + 1].first_range_idx as usize];
@@ -656,15 +663,15 @@ fn main() {
         // write
         let mut cch = CCH::new(path);
         cch.customize(true);
-        cch.save(path);
+        // cch.save(path);
         cch
     } else {
         // read
         CCH::read(path)
     };
-    cch.parent_stats();
+    // cch.parent_stats();
 
-    let q = 100;
+    let q = 10000;
 
     let n = cch.n;
     let mut rng = SmallRng::from_seed([123; _]);
@@ -673,7 +680,7 @@ fn main() {
         .collect_vec();
 
     // let target_sum = dijkstra::dijkstra(path, &queries);
-    let target_sum = 753876754;
+    let _target_sum = 753876754;
 
     info!("{} queries..", queries.len());
     let mut sum = 0;
@@ -687,7 +694,7 @@ fn main() {
         elapsed.as_nanos() / queries.len() as u128 / 1000
     );
     info!("Sum: {sum}");
-    assert_eq!(sum, target_sum);
+    // assert_eq!(sum, target_sum);
 }
 
 /// Takes a range of EdgeId and splits it into multiple ranges of EdgeId
