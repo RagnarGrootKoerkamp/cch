@@ -67,7 +67,7 @@ struct HalfEdge {
     /// Weight for up and down direction.
     weight: [Weight; 2],
     /// For use during perfect customization.
-    deleted: bool,
+    deleted: [bool; 2],
 }
 
 /// Edge from `tail` to `head`.
@@ -281,7 +281,7 @@ impl CCH {
             edges.extend(nbs.iter().map(|&head| HalfEdge {
                 head,
                 weight: [W_INF; 2],
-                deleted: false,
+                deleted: [false; 2],
             }));
 
             // copy neighbourhood to parent
@@ -316,7 +316,7 @@ impl CCH {
             std::iter::repeat(HalfEdge {
                 head: 0,
                 weight: [W_INF; 2],
-                deleted: false,
+                deleted: [false; 2],
             })
             .take(2 * L),
         );
@@ -481,19 +481,19 @@ impl CCH {
                         assert_eq!(self.edges[idx].head, y);
                         let xy = self.edges[idx];
 
-                        // i < x < y
+                        // u < x < y
                         for dir in [UP, DOWN] {
                             let ux_relax = uy.weight[dir] + xy.weight[dir ^ 1];
                             if ux_relax < ux.weight[dir] {
                                 let ux = &mut self.edges[i];
                                 ux.weight[dir] = ux_relax;
-                                ux.deleted = true;
+                                ux.deleted[dir] = true;
                             }
                             let uy_relax = ux.weight[dir] + xy.weight[dir];
                             if uy_relax < uy.weight[dir] {
                                 let uy = &mut self.edges[j];
                                 uy.weight[dir] = uy_relax;
-                                uy.deleted = true;
+                                uy.deleted[dir] = true;
                             }
                         }
                     }
@@ -504,6 +504,9 @@ impl CCH {
             // For count for each node the number of non-deleted outgoing edges, and compactify the non-deleted edges.
             info!("Compress edges..");
 
+            let mut delete_one = 0;
+            let mut delete_both = 0;
+
             let num_edges = self.edges.len();
             // output edge index
             let mut i = 0;
@@ -511,8 +514,16 @@ impl CCH {
                 let edge_range = self.edge_range(u);
                 self.nodes[u as usize].first_edge_idx = i as u32;
                 for j in edge_range {
-                    if !self.edges[j].deleted {
-                        self.edges[i] = self.edges[j];
+                    let e = self.edges[j];
+                    if e.deleted[0] && e.deleted[1] {
+                        delete_both += 1;
+                    } else if e.deleted[0] || e.deleted[1] {
+                        delete_one += 1;
+                    }
+
+                    // if one of the two directions is not deleted, keep the edge
+                    if !e.deleted[0] || !e.deleted[1] {
+                        self.edges[i] = e;
                         i += 1;
                     }
                 }
@@ -521,6 +532,8 @@ impl CCH {
             self.edges.truncate(i);
             info!("Pruned edges: {:>8}", num_edges - self.edges.len());
             info!("Remaining:    {:>8}", self.edges.len());
+            info!("delete one    {:>8}", delete_one);
+            info!("delete both   {:>8}", delete_both);
         }
 
         // // Sort outgoing edges by increasing weight
@@ -550,7 +563,7 @@ impl CCH {
                         new_edges.push(HalfEdge {
                             head: v_new,
                             weight: [W_INF; 2],
-                            deleted: false,
+                            deleted: [false; 2],
                         });
                     }
                 } else {
@@ -559,7 +572,7 @@ impl CCH {
                         new_edges.push(HalfEdge {
                             head: v_new,
                             weight: [W_INF; 2],
-                            deleted: false,
+                            deleted: [false; 2],
                         });
                     }
                     start = v;
@@ -576,7 +589,7 @@ impl CCH {
                 new_edges.push(HalfEdge {
                     head: v_new,
                     weight: [W_INF; 2],
-                    deleted: false,
+                    deleted: [false; 2],
                 });
             }
         }
@@ -703,7 +716,7 @@ fn main() {
     env_logger::init();
 
     let path = Path::new("graphs/europe");
-    let mut cch = if false {
+    let mut cch = if true {
         // write
         let mut cch = CCH::new(path);
         cch.customize(true);
@@ -734,8 +747,8 @@ fn main() {
         "Queries.. done {} us/q",
         elapsed.as_nanos() / queries.len() as u128 / 1000
     );
-    info!("CCH dists: {out:?}");
     if q == 10 {
+        info!("CCH dists: {out:?}");
         let dists = dijkstra::dijkstra(path, &queries);
         info!("Dijkstra:  {:?}", dists);
         let target_sum = dists.iter().sum::<Weight>();
