@@ -4,12 +4,16 @@ use epserde::ser::Serialize;
 use itertools::Itertools;
 use log::{debug, info, trace};
 use rand::{rngs::SmallRng, RngExt, SeedableRng};
-use std::{
-    collections::HashMap,
-    ops::Range,
-    path::Path,
-    simd::{cmp::SimdOrd, i32x8},
-};
+use std::{collections::HashMap, ops::Range, path::Path, simd::cmp::SimdOrd};
+
+#[cfg(not(feature = "avx512"))]
+const L: usize = 8;
+#[cfg(not(feature = "avx512"))]
+type S = std::simd::i32x8;
+#[cfg(feature = "avx512")]
+const L: usize = 16;
+#[cfg(feature = "avx512")]
+type S = std::simd::i32x16;
 
 mod dijkstra;
 
@@ -503,7 +507,7 @@ impl CCH {
             }
             let mut last_v = self.edges[edge_range.start].head;
             let mut start = last_v;
-            let mut end = start + 8;
+            let mut end = start + L as u32;
             for i in edge_range {
                 let e = self.edges[i];
                 let v = e.head;
@@ -525,11 +529,11 @@ impl CCH {
                         });
                     }
                     start = v;
-                    end = start + 8;
+                    end = start + L as u32;
                 }
                 new_edges.push(e);
                 while v >= end {
-                    end += 8;
+                    end += L as u32;
                 }
                 last_v = v;
             }
@@ -615,7 +619,7 @@ impl CCH {
                     let d = &mut self.dist[dir];
                     let w = &self.edge_weigths[dir];
 
-                    let dx_simd = i32x8::splat(dx);
+                    let dx_simd = S::splat(dx);
                     let mut i0 = edge_range.start as usize;
                     for range in ranges {
                         unsafe {
@@ -623,17 +627,16 @@ impl CCH {
 
                             // A single loop body
                             {
-                                let old_dists = i32x8::from_array(
-                                    *d.get_unchecked(v0 as usize..v0 as usize + 8)
+                                let old_dists = S::from_array(
+                                    *d.get_unchecked(v0 as usize..v0 as usize + L)
                                         .as_array()
                                         .unwrap(),
                                 );
-                                let ws = i32x8::from_array(
-                                    *w.get_unchecked(i0..i0 + 8).as_array().unwrap(),
-                                );
+                                let ws =
+                                    S::from_array(*w.get_unchecked(i0..i0 + L).as_array().unwrap());
                                 let new_dists = ws + dx_simd;
                                 let min_dists = old_dists.simd_min(new_dists);
-                                *d.get_unchecked_mut(v0 as usize..v0 as usize + 8)
+                                *d.get_unchecked_mut(v0 as usize..v0 as usize + L)
                                     .as_mut_array()
                                     .unwrap() = min_dists.to_array();
                             }

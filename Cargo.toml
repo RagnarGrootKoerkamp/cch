@@ -10,5 +10,8 @@ itertools = "0.14.0"
 log = "0.4.29"
 rand = "0.10.0"
 
+[features]
+avx512 = []
+
 [profile.release]
 debug = true
