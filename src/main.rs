@@ -5,6 +5,7 @@ use itertools::Itertools;
 use log::{debug, info, trace};
 use rand::RngExt;
 use std::{
+    collections::HashMap,
     ops::Range,
     path::Path,
     simd::{cmp::SimdOrd, i32x8},
@@ -291,6 +292,32 @@ impl CCH {
             edge_weigths: [vec![], vec![]],
             edge_ranges: vec![],
             dist: [vec![], vec![]],
+        }
+    }
+
+    #[allow(unused)]
+    fn parent_stats(&self) {
+        let mut child_cnt = vec![0; self.n as usize];
+        for u in 0..self.n as u32 {
+            let p = self.nodes[u as usize].parent;
+            if p != INVALID_ID {
+                child_cnt[p as usize] += 1;
+            }
+        }
+        debug!(
+            "Last 1000 degs: {:?}",
+            child_cnt.iter().rev().take(1000).collect_vec()
+        );
+
+        let mut deg_cnt = HashMap::new();
+        for cnt in child_cnt {
+            *deg_cnt.entry(cnt).or_insert(0) += 1;
+        }
+        let mut deg_cnt = deg_cnt.into_iter().collect_vec();
+        deg_cnt.sort_unstable_by_key(|(deg, _)| *deg);
+        debug!("Parent degree distribution:");
+        for (deg, cnt) in deg_cnt {
+            debug!("  {deg:>3}: {cnt:>9}");
         }
     }
 
@@ -633,6 +660,7 @@ fn main() {
         // read
         CCH::read(path)
     };
+    cch.parent_stats();
 
     let q = 100000;
 
