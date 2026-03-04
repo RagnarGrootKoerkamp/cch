@@ -716,7 +716,7 @@ fn main() {
     env_logger::init();
 
     let path = Path::new("graphs/europe");
-    let mut cch = if true {
+    let mut cch = if false {
         // write
         let mut cch = CCH::new(path);
         cch.customize(true);
@@ -728,34 +728,45 @@ fn main() {
     };
     // cch.parent_stats();
 
-    let q = 10;
+    let q = 20000;
 
     let n = cch.n;
+
     let mut rng = SmallRng::from_seed([123; _]);
     let queries = (0..q)
         .map(|_| (rng.random_range(0..n), rng.random_range(0..n)))
         .collect_vec();
 
-    info!("{} queries..", queries.len());
-    let mut out = vec![];
-    let start = std::time::Instant::now();
-    for (s, t) in &queries {
-        out.push(cch.query(*s, *t));
+    let sources = read_vec(&Path::new("queries/sources"));
+    for i in (0..25).rev() {
+        let targets = read_vec(&Path::new(&format!("queries/targets_{i}")));
+        for _ in 0..5 {
+            // q random queries to warm/trash cache
+            for (s, t) in &queries {
+                cch.query(*s, *t);
+            }
+
+            let mut out = vec![];
+            let start = std::time::Instant::now();
+            for (s, t) in std::iter::zip(&sources, &targets) {
+                out.push(cch.query(*s, *t));
+            }
+            let elapsed = start.elapsed();
+            info!(
+                "Queries 2^{i}.. done {} us/q",
+                elapsed.as_nanos() / sources.len() as u128 / 1000
+            );
+        }
     }
-    let elapsed = start.elapsed();
-    info!(
-        "Queries.. done {} us/q",
-        elapsed.as_nanos() / queries.len() as u128 / 1000
-    );
-    if q == 10 {
-        info!("CCH dists: {out:?}");
-        let dists = dijkstra::dijkstra(path, &queries);
-        info!("Dijkstra:  {:?}", dists);
-        let target_sum = dists.iter().sum::<Weight>();
-        info!("target_sum: {target_sum}");
-        let sum = out.iter().sum::<Weight>();
-        assert_eq!(sum, target_sum);
-    }
+    // if q == 10 {
+    //     info!("CCH dists: {out:?}");
+    //     let dists = dijkstra::dijkstra(path, &queries);
+    //     info!("Dijkstra:  {:?}", dists);
+    //     let target_sum = dists.iter().sum::<Weight>();
+    //     info!("target_sum: {target_sum}");
+    //     let sum = out.iter().sum::<Weight>();
+    //     assert_eq!(sum, target_sum);
+    // }
 }
 
 /// Takes a range of EdgeId and splits it into multiple ranges of EdgeId
