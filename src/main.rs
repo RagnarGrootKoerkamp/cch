@@ -715,7 +715,7 @@ fn main() {
     };
     // cch.parent_stats();
 
-    let q = 10000;
+    let q = 10;
 
     let n = cch.n;
     let mut rng = SmallRng::from_seed([123; _]);
@@ -723,22 +723,26 @@ fn main() {
         .map(|_| (rng.random_range(0..n), rng.random_range(0..n)))
         .collect_vec();
 
-    // let target_sum = dijkstra::dijkstra(path, &queries);
-    let _target_sum = 753876754;
-
     info!("{} queries..", queries.len());
-    let mut sum = 0;
+    let mut out = vec![];
     let start = std::time::Instant::now();
     for (s, t) in &queries {
-        sum += cch.query(*s, *t);
+        out.push(cch.query(*s, *t));
     }
     let elapsed = start.elapsed();
     info!(
         "Queries.. done {} us/q",
         elapsed.as_nanos() / queries.len() as u128 / 1000
     );
-    info!("Sum: {sum}");
-    // assert_eq!(sum, target_sum);
+    info!("CCH dists: {out:?}");
+    if q == 10 {
+        let dists = dijkstra::dijkstra(path, &queries);
+        info!("Dijkstra:  {:?}", dists);
+        let target_sum = dists.iter().sum::<Weight>();
+        info!("target_sum: {target_sum}");
+        let sum = out.iter().sum::<Weight>();
+        assert_eq!(sum, target_sum);
+    }
 }
 
 /// Takes a range of EdgeId and splits it into multiple ranges of EdgeId

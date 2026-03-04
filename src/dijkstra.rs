@@ -4,7 +4,7 @@ use std::{cmp::Reverse, path::Path};
 
 /// Return the sum of shortest path lengths.
 #[allow(unused)]
-pub fn dijkstra(path: &Path, queries: &[(u32, u32)]) -> Weight {
+pub fn dijkstra(path: &Path, queries: &[(u32, u32)]) -> Vec<Weight> {
     // Read files.
     info!("Reading..");
     let first_out = read_vec(&path.with_added_extension("first_out"));
@@ -14,7 +14,7 @@ pub fn dijkstra(path: &Path, queries: &[(u32, u32)]) -> Weight {
 
     let n = first_out.len() - 1;
 
-    let mut sum: Weight = 0;
+    let mut out = vec![];
 
     let mut dist = vec![W_INF; n];
     let mut q = std::collections::BinaryHeap::new();
@@ -46,8 +46,8 @@ pub fn dijkstra(path: &Path, queries: &[(u32, u32)]) -> Weight {
         }
 
         debug!("query {i}: {s} -> {t}: {}", dist[t as usize]);
-        sum += dist[t as usize] as Weight;
+        out.push(dist[t as usize] as Weight);
     }
-    info!("Target sum {sum}");
-    sum
+    info!("Target sum {}", out.iter().sum::<Weight>());
+    out
 }
