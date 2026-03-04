@@ -104,6 +104,8 @@ impl Edge {
 struct EdgeRange {
     /// Head of the first edge in the range.
     first_head: NodeId,
+    /// Min weight of an edge in this block.
+    min_weight: Weight,
 }
 
 #[derive(epserde::Epserde)]
@@ -603,10 +605,43 @@ impl CCH {
             // let ranges = compress(self.edges[edge_range.clone()].iter().map(|e| e.head));
             let ranges = compress(&self.edges, edge_range.clone());
             self.nodes[u as usize].first_range_idx = self.edge_ranges.len() as u32;
+
             self.edge_ranges.extend(ranges);
         }
         info!("Num ranges: {:>8}", self.edge_ranges.len());
         self.nodes[self.n as usize].first_range_idx = self.edge_ranges.len() as u32;
+        // Sort the range of simd-blocks by increasing minimal edge weight, and amend each range by the smallest weight it contains.
+        for u in 0..self.n {
+            for dir in [UP, DOWN] {
+                let range_range = self.nodes[u as usize].first_range_idx as usize
+                    ..self.nodes[u as usize + 1].first_range_idx as usize;
+                let mut ranges = self.edge_ranges[range_range.clone()]
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .collect_vec();
+                let edge_range = self.edge_range(u);
+                let mut i0 = edge_range.start as usize;
+                for r in &mut ranges {
+                    for i in 0..8 {
+                        r.1.min_weight = r.1.min_weight.min(self.edges[i0 + i].weight[dir]);
+                    }
+                    i0 += L;
+                }
+                ranges.sort_unstable_by_key(|r| r.1.min_weight);
+                // Permute self.edges[edge_range] according to the new order of the ranges.
+                let old_weights = self.edges[edge_range.clone()].iter().copied().collect_vec();
+                for (i, r) in ranges.iter().enumerate() {
+                    let new_range =
+                        edge_range.start as usize + i * L..edge_range.start as usize + (i + 1) * L;
+                    let old_range = r.0 * L..(r.0 + 1) * L;
+                    self.edge_ranges[range_range.start + i] = r.1;
+                    self.edges[new_range].copy_from_slice(&old_weights[old_range]);
+                }
+
+                // self.edge_ranges[range_range].copy_from_slice(&ranges);
+            }
+        }
         // Fill edge weights
         for e in &self.edges {
             for dir in [UP, DOWN] {
@@ -634,7 +669,7 @@ impl CCH {
         let mut num_expanded_nodes = 0;
         let mut num_edges = 0;
         let mut num_pruned = 0;
-        let num_pruned_edges = 0;
+        let mut num_pruned_edges = 0;
 
         // Process the smaller of s and t.
         let mut cur = [s, t];
@@ -643,7 +678,15 @@ impl CCH {
             num_visited_nodes += 1;
             let x = cur[dir];
             let dx = self.dist[dir][x as usize];
-            self.expand_node(&mut num_expanded_nodes, &mut num_edges, dir, x, dx);
+            self.expand_node(
+                &mut num_expanded_nodes,
+                &mut num_edges,
+                &mut num_pruned_edges,
+                dir,
+                x,
+                dx,
+                None,
+            );
 
             // Go to parent.
             cur[dir] = self.nodes[x as usize].parent;
@@ -662,7 +705,15 @@ impl CCH {
                     self.dist[dir][x as usize] = W_INF;
                     continue;
                 }
-                self.expand_node(&mut num_expanded_nodes, &mut num_edges, dir, x, dx);
+                self.expand_node(
+                    &mut num_expanded_nodes,
+                    &mut num_edges,
+                    &mut num_pruned_edges,
+                    dir,
+                    x,
+                    dx,
+                    Some(best_dist),
+                );
             }
             // Go to parent.
             x = self.nodes[x as usize].parent;
@@ -677,9 +728,11 @@ impl CCH {
         &mut self,
         num_expanded_nodes: &mut i32,
         num_edges: &mut usize,
+        num_pruned_edges: &mut usize,
         dir: usize,
         x: u32,
-        dx: i32,
+        dx: Weight,
+        best: Option<Weight>,
     ) {
         // Distance to a parent can be INF in case edges were pruned.
         if dx >= W_INF {
@@ -710,6 +763,14 @@ impl CCH {
         for range in ranges {
             unsafe {
                 let v0 = range.first_head;
+
+                // Edge pruning
+                if let Some(best) = best {
+                    if dx + range.min_weight >= best {
+                        *num_pruned_edges += edge_range.end - i0;
+                        break;
+                    }
+                }
 
                 // A single loop body
                 {
@@ -812,6 +873,7 @@ fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
         if edges[x].head != prev + 1 || (x - start) == 8 {
             ranges.push(EdgeRange {
                 first_head: edges[start].head,
+                min_weight: W_INF,
             });
             start = x;
         }
@@ -819,6 +881,7 @@ fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
     }
     ranges.push(EdgeRange {
         first_head: edges[start].head,
+        min_weight: W_INF,
     });
     // if in_range.len() > 100 {
     //     eprintln!("compress {in_range:?} to {ranges:?}");
