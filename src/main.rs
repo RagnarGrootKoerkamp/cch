@@ -735,10 +735,11 @@ impl CCH {
 
 fn main() {
     env_logger::init();
-    let arg = std::env::args().nth(1);
+    let args = std::env::args().collect_vec();
+    let args = args.iter().map(|s| &s[..]).collect_vec();
 
     let path = Path::new("graphs/europe");
-    let mut cch = if arg.as_deref() == Some(&"build") {
+    let mut cch = if args.contains(&"build") {
         // build and save
         let mut cch = CCH::new(path);
         cch.customize(true);
@@ -769,8 +770,10 @@ fn main() {
         let targets = read_vec(&Path::new(&format!("queries/targets_{i}")));
         for _ in 0..5 {
             // q random queries to warm/trash cache
-            for (s, t) in &queries {
-                cch.query(*s, *t);
+            if !args.contains(&"clean") {
+                for (s, t) in &queries {
+                    cch.query(*s, *t);
+                }
             }
 
             let mut out = vec![];
