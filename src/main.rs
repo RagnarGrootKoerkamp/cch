@@ -294,6 +294,24 @@ impl CCH {
         info!("added edges: {:>9}", edges.len() - input_edges.len());
         info!("total edges: {:>9}", edges.len());
 
+        // Add buffers at the end.
+        nodes.extend(
+            std::iter::repeat(Node {
+                first_edge_idx: 0,
+                first_range_idx: 0,
+                parent: INVALID_ID,
+            })
+            .take(2 * L),
+        );
+        edges.extend(
+            std::iter::repeat(HalfEdge {
+                head: 0,
+                weight: [W_INF; 2],
+                deleted: false,
+            })
+            .take(2 * L),
+        );
+
         Self {
             n: n as u32,
             input_edges,
@@ -569,6 +587,9 @@ impl CCH {
             for dir in [UP, DOWN] {
                 self.edge_weigths[dir].push(e.weight[dir]);
             }
+        }
+        for dir in [UP, DOWN] {
+            self.edge_weigths[dir].extend(std::iter::repeat(W_INF).take(2 * L));
         }
     }
 
