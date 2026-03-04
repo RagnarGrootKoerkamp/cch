@@ -369,10 +369,10 @@ impl CCH {
         unsafe { self.serialize(&mut file).unwrap() };
     }
     #[allow(unused)]
-    fn read(path: &Path) -> Self {
+    fn read(path: &Path) -> Option<Self> {
         info!("Reading..");
         let mut path = path.with_added_extension("cch");
-        unsafe { Self::load_full(&path).unwrap() }
+        unsafe { Self::load_full(&path).ok() }
     }
 
     fn edge_range(&self, u: NodeId) -> std::ops::Range<usize> {
@@ -735,17 +735,23 @@ impl CCH {
 
 fn main() {
     env_logger::init();
+    let arg = std::env::args().nth(1);
 
     let path = Path::new("graphs/europe");
-    let mut cch = if false {
-        // write
+    let mut cch = if arg.as_deref() == Some(&"build") {
+        // build and save
         let mut cch = CCH::new(path);
         cch.customize(true);
-        // cch.save(path);
+        cch.save(path);
         cch
     } else {
-        // read
-        CCH::read(path)
+        // read, with fallback to build and save
+        CCH::read(path).unwrap_or_else(|| {
+            let mut cch = CCH::new(path);
+            cch.customize(true);
+            cch.save(path);
+            cch
+        })
     };
     // cch.parent_stats();
 
