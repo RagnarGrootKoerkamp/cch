@@ -11,6 +11,7 @@ log = "0.4.29"
 rand = "0.10.0"
 
 [features]
+sse = []
 avx512 = []
 
 [profile.release]

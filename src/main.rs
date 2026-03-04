@@ -6,9 +6,13 @@ use log::{debug, info, trace};
 use rand::{rngs::SmallRng, RngExt, SeedableRng};
 use std::{collections::HashMap, ops::Range, path::Path, simd::cmp::SimdOrd};
 
-#[cfg(not(feature = "avx512"))]
+#[cfg(feature = "sse")]
+const L: usize = 4;
+#[cfg(feature = "sse")]
+type S = std::simd::i32x4;
+#[cfg(not(any(feature = "sse", feature = "avx512")))]
 const L: usize = 8;
-#[cfg(not(feature = "avx512"))]
+#[cfg(not(any(feature = "sse", feature = "avx512")))]
 type S = std::simd::i32x8;
 #[cfg(feature = "avx512")]
 const L: usize = 16;
