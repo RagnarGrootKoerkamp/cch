@@ -3,13 +3,15 @@ use epserde::deser::Deserialize;
 use epserde::ser::Serialize;
 use itertools::Itertools;
 use log::{debug, info, trace};
-use rand::RngExt;
+use rand::{rngs::SmallRng, RngExt, SeedableRng};
 use std::{
     collections::HashMap,
     ops::Range,
     path::Path,
     simd::{cmp::SimdOrd, i32x8},
 };
+
+mod dijkstra;
 
 type NodeId = u32;
 type EdgeId = u32;
@@ -662,24 +664,30 @@ fn main() {
     };
     cch.parent_stats();
 
-    let q = 100000;
+    let q = 100;
 
     let n = cch.n;
-    let mut rng = rand::rng();
+    let mut rng = SmallRng::from_seed([123; _]);
     let queries = (0..q)
         .map(|_| (rng.random_range(0..n), rng.random_range(0..n)))
         .collect_vec();
 
+    // let target_sum = dijkstra::dijkstra(path, &queries);
+    let target_sum = 753876754;
+
     info!("{} queries..", queries.len());
+    let mut sum = 0;
     let start = std::time::Instant::now();
     for (s, t) in &queries {
-        cch.query(*s, *t);
+        sum += cch.query(*s, *t);
     }
     let elapsed = start.elapsed();
     info!(
         "Queries.. done {} us/q",
         elapsed.as_nanos() / queries.len() as u128 / 1000
     );
+    info!("Sum: {sum}");
+    assert_eq!(sum, target_sum);
 }
 
 /// Takes a range of EdgeId and splits it into multiple ranges of EdgeId
