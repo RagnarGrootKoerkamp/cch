@@ -128,6 +128,11 @@ pub struct CCH {
     /// Flattened edge weights
     edge_weigths: [Vec<Weight>; 2],
 
+    /// Number of children in the elimination tree of each node.
+    child_count: Vec<u32>,
+    /// Level in the elimination tree of each node.
+    level: Vec<u32>,
+
     /// Up and down distance cache to each node for queries.
     dist: [Vec<Weight>; 2],
 }
@@ -323,7 +328,7 @@ impl CCH {
             .take(2 * L),
         );
 
-        Self {
+        let mut cch = Self {
             n: n as u32,
             input_edges,
             rank,
@@ -332,25 +337,34 @@ impl CCH {
             edge_weigths: [vec![], vec![]],
             edge_ranges: vec![],
             dist: [vec![], vec![]],
-        }
+            child_count: vec![],
+            level: vec![],
+        };
+        cch.parent_stats();
+        cch
     }
 
     #[allow(unused)]
-    fn parent_stats(&self) {
-        let mut child_cnt = vec![0; self.n as usize];
+    fn parent_stats(&mut self) {
+        self.level = vec![0; self.n as usize];
+        for u in (0..self.n - 1).rev() {
+            self.level[u as usize] = self.level[self.nodes[u as usize].parent as usize] + 1;
+        }
+
+        self.child_count = vec![0; self.n as usize];
         for u in 0..self.n as u32 {
             let p = self.nodes[u as usize].parent;
             if p != INVALID_ID {
-                child_cnt[p as usize] += 1;
+                self.child_count[p as usize] += 1;
             }
         }
-        debug!(
+        trace!(
             "Last 1000 degs: {:?}",
-            child_cnt.iter().rev().take(1000).collect_vec()
+            self.child_count.iter().rev().take(1000).collect_vec()
         );
 
         let mut deg_cnt = HashMap::new();
-        for cnt in child_cnt {
+        for cnt in &self.child_count {
             *deg_cnt.entry(cnt).or_insert(0) += 1;
         }
         let mut deg_cnt = deg_cnt.into_iter().collect_vec();
@@ -815,7 +829,7 @@ fn main() {
             cch
         })
     };
-    // cch.parent_stats();
+    cch.parent_stats();
 
     let q = 20000;
 
