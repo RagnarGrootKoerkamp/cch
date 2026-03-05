@@ -938,6 +938,35 @@ impl CCH {
     }
 }
 
+/// Takes a range of EdgeId and splits it into multiple ranges of EdgeId
+/// where the neighbours are consecutive.
+fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
+    // let in_range = range.clone();
+    let mut ranges = vec![];
+    let Some(mut start) = range.next() else {
+        return ranges;
+    };
+    let mut prev = edges[start].head;
+    for x in range.clone() {
+        if edges[x].head != prev + 1 || (x - start) == 8 {
+            ranges.push(EdgeRange {
+                first_head: edges[start].head,
+                min_weight: W_INF,
+            });
+            start = x;
+        }
+        prev = edges[x].head;
+    }
+    ranges.push(EdgeRange {
+        first_head: edges[start].head,
+        min_weight: W_INF,
+    });
+    // if in_range.len() > 100 {
+    //     eprintln!("compress {in_range:?} to {ranges:?}");
+    // }
+    ranges
+}
+
 fn main() {
     env_logger::init();
     let args = std::env::args().collect_vec();
@@ -1002,33 +1031,4 @@ fn main() {
     //     let sum = out.iter().sum::<Weight>();
     //     assert_eq!(sum, target_sum);
     // }
-}
-
-/// Takes a range of EdgeId and splits it into multiple ranges of EdgeId
-/// where the neighbours are consecutive.
-fn compress(edges: &Vec<HalfEdge>, mut range: Range<usize>) -> Vec<EdgeRange> {
-    // let in_range = range.clone();
-    let mut ranges = vec![];
-    let Some(mut start) = range.next() else {
-        return ranges;
-    };
-    let mut prev = edges[start].head;
-    for x in range.clone() {
-        if edges[x].head != prev + 1 || (x - start) == 8 {
-            ranges.push(EdgeRange {
-                first_head: edges[start].head,
-                min_weight: W_INF,
-            });
-            start = x;
-        }
-        prev = edges[x].head;
-    }
-    ranges.push(EdgeRange {
-        first_head: edges[start].head,
-        min_weight: W_INF,
-    });
-    // if in_range.len() > 100 {
-    //     eprintln!("compress {in_range:?} to {ranges:?}");
-    // }
-    ranges
 }
