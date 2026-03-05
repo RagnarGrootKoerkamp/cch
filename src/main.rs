@@ -1075,8 +1075,8 @@ impl CCH {
         *num_edges += edge_range.len();
         let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
             ..self.nodes[x as usize + 1].first_range_idx as usize];
-        let d = &mut self.dist[dir];
-        let w = &self.edge_weigths[dir];
+        let d = &mut self.dist[dir].as_mut_ptr();
+        let w = &self.edge_weigths[dir].as_ptr();
         // let pw = &self.parent_edge_weigths[dir];
 
         let dx_simd = S::splat(dx);
@@ -1096,21 +1096,15 @@ impl CCH {
 
                 // A single loop body
                 {
-                    let old_dists = S::from_array(
-                        *d.get_unchecked(v0 as usize..v0 as usize + L)
-                            .as_array()
-                            .unwrap(),
-                    );
-                    let xw = S::from_array(w.get_unchecked(i0).weights);
-                    let pw = S::from_array(w.get_unchecked(i0).p_weights);
+                    let dists: *mut S = d.offset(v0 as isize) as _;
+                    let xw = S::from_array(w.offset(i0 as isize).read().weights);
+                    let pw = S::from_array(w.offset(i0 as isize).read().p_weights);
                     // debug!("dir {dir} x {x} p {p} dx {dx} dp {dp} xw {xw:?} pw {pw:?}");
                     let x_dists = dx_simd + xw;
                     let p_dists = dp_simd + pw;
-                    let min_dists = old_dists.simd_min(x_dists.simd_min(p_dists));
+                    let min_dists = dists.read_unaligned().simd_min(x_dists.simd_min(p_dists));
                     // let min_dists = old_dists.simd_min(x_dists);
-                    *d.get_unchecked_mut(v0 as usize..v0 as usize + L)
-                        .as_mut_array()
-                        .unwrap() = min_dists.to_array();
+                    dists.write_unaligned(min_dists);
                 }
                 i0 += 1;
             }
