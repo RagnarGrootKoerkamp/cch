@@ -705,15 +705,22 @@ impl CCH {
             }
         }
         // Fill edge weights
-        for e in &self.edges {
-            for dir in [UP, DOWN] {
-                self.edge_weigths[dir].push(e.weight[dir]);
-                self.parent_edge_weigths[dir].push(e.parent_weight[dir]);
+        let (chunks, empty) = self.edges.as_chunks::<8>();
+        assert!(empty.is_empty());
+        for block in chunks {
+            for e in block {
+                for dir in [UP, DOWN] {
+                    self.edge_weigths[dir].push(e.weight[dir]);
+                }
+            }
+            for e in block {
+                for dir in [UP, DOWN] {
+                    self.edge_weigths[dir].push(e.parent_weight[dir]);
+                }
             }
         }
         for dir in [UP, DOWN] {
-            self.edge_weigths[dir].extend(std::iter::repeat(W_INF).take(2 * L));
-            self.parent_edge_weigths[dir].extend(std::iter::repeat(W_INF).take(2 * L));
+            self.edge_weigths[dir].extend(std::iter::repeat(W_INF).take(4 * L));
         }
     }
 
@@ -973,7 +980,8 @@ impl CCH {
                             .as_array()
                             .unwrap(),
                     );
-                    let ws = S::from_array(*w.get_unchecked(i0..i0 + L).as_array().unwrap());
+                    let ws =
+                        S::from_array(*w.get_unchecked(2 * i0..2 * i0 + L).as_array().unwrap());
                     let new_dists = ws + dx_simd;
                     let min_dists = old_dists.simd_min(new_dists);
                     *d.get_unchecked_mut(v0 as usize..v0 as usize + L)
@@ -1047,7 +1055,7 @@ impl CCH {
             ..self.nodes[x as usize + 1].first_range_idx as usize];
         let d = &mut self.dist[dir];
         let w = &self.edge_weigths[dir];
-        let pw = &self.parent_edge_weigths[dir];
+        // let pw = &self.parent_edge_weigths[dir];
 
         let dx_simd = S::splat(dx);
         let dp_simd = S::splat(dp);
@@ -1071,8 +1079,13 @@ impl CCH {
                             .as_array()
                             .unwrap(),
                     );
-                    let xw = S::from_array(*w.get_unchecked(i0..i0 + L).as_array().unwrap());
-                    let pw = S::from_array(*pw.get_unchecked(i0..i0 + L).as_array().unwrap());
+                    let xw =
+                        S::from_array(*w.get_unchecked(2 * i0..2 * i0 + L).as_array().unwrap());
+                    let pw = S::from_array(
+                        *w.get_unchecked(2 * i0 + L..2 * i0 + 2 * L)
+                            .as_array()
+                            .unwrap(),
+                    );
                     // debug!("dir {dir} x {x} p {p} dx {dx} dp {dp} xw {xw:?} pw {pw:?}");
                     let x_dists = dx_simd + xw;
                     let p_dists = dp_simd + pw;
