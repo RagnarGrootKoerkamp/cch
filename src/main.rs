@@ -51,6 +51,10 @@ struct Node {
     first_range_idx: EdgeId,
     /// Parent ID.
     parent: NodeId,
+    /// Parent of parent
+    parent_parent: NodeId,
+    /// Weight to parent
+    parent_weight: [Weight; 2],
 }
 
 const UP: usize = 0;
@@ -272,6 +276,8 @@ impl CCH {
                     first_edge_idx: edges.len() as u32,
                     first_range_idx: 0,
                     parent: INVALID_ID,
+                    parent_parent: INVALID_ID,
+                    parent_weight: [W_INF; 2],
                 });
                 break;
             }
@@ -282,6 +288,8 @@ impl CCH {
                 first_edge_idx: edges.len() as u32,
                 first_range_idx: 0,
                 parent,
+                parent_parent: INVALID_ID,
+                parent_weight: [W_INF; 2],
             });
 
             // store up-edges of u
@@ -295,10 +303,17 @@ impl CCH {
             adj[parent as usize].extend(&nbs[1..]);
         }
 
+        for u in 0..n - 1 {
+            let p = nodes[u].parent;
+            nodes[u].parent_parent = nodes[p as usize].parent;
+        }
+
         nodes.push(Node {
             first_edge_idx: edges.len() as u32,
             first_range_idx: 0,
             parent: INVALID_ID,
+            parent_parent: INVALID_ID,
+            parent_weight: [W_INF; 2],
         });
 
         for i in 0..n as u32 {
@@ -316,6 +331,8 @@ impl CCH {
                 first_edge_idx: 0,
                 first_range_idx: 0,
                 parent: INVALID_ID,
+                parent_parent: INVALID_ID,
+                parent_weight: [W_INF; 2],
             })
             .take(2 * L),
         );
@@ -475,6 +492,14 @@ impl CCH {
             }
         }
 
+        // Set parent weights
+        for u in 0..self.n - 1 {
+            let parent_edge_idx = self.edge_range(u).start;
+            let parent_edge = self.edges[parent_edge_idx];
+            assert_eq!(parent_edge.head, self.nodes[u as usize].parent);
+            self.nodes[u as usize].parent_weight = parent_edge.weight;
+        }
+
         if perfect {
             // Drop edges that are never in a shortest path.
             // For each node from high to low, check if the middle and top edge of
@@ -552,11 +577,7 @@ impl CCH {
             info!("delete both   {:>8}", delete_both);
         }
 
-        // // Sort outgoing edges by increasing weight
-        // for u in 0..self.n {
-        //     let edge_range = self.edge_range(u);
-        //     self.edges[edge_range].sort_unstable_by_key(|e| e.weight);
-        // }
+        //
 
         // Add dummy INF edges if neighbours are at most GAP apart.
         info!("Add dummy edges.. Starting with {} edges", self.edges.len());
