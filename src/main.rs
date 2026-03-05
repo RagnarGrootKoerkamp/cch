@@ -62,7 +62,7 @@ const DOWN: usize = 1;
 
 /// Edge goes to `head`.
 /// Tail is implicit via `first_out` of the source node.
-#[derive(Clone, Copy, epserde::Epserde)]
+#[derive(Debug, Clone, Copy, epserde::Epserde)]
 #[repr(C)]
 #[epserde_zero_copy]
 struct HalfEdge {
@@ -70,6 +70,8 @@ struct HalfEdge {
     head: NodeId,
     /// Weight for up and down direction.
     weight: [Weight; 2],
+    /// Weight from parent to `head`.
+    parent_weight: [Weight; 2],
     /// For use during perfect customization.
     deleted: [bool; 2],
 }
@@ -131,6 +133,8 @@ pub struct CCH {
     edge_ranges: Vec<EdgeRange>,
     /// Flattened edge weights
     edge_weigths: [Vec<Weight>; 2],
+    /// Flattened edge weights
+    parent_edge_weigths: [Vec<Weight>; 2],
 
     /// Number of children in the elimination tree of each node.
     child_count: Vec<u32>,
@@ -296,6 +300,7 @@ impl CCH {
             edges.extend(nbs.iter().map(|&head| HalfEdge {
                 head,
                 weight: [W_INF; 2],
+                parent_weight: [W_INF; 2],
                 deleted: [false; 2],
             }));
 
@@ -340,6 +345,7 @@ impl CCH {
             std::iter::repeat(HalfEdge {
                 head: 0,
                 weight: [W_INF; 2],
+                parent_weight: [W_INF; 2],
                 deleted: [false; 2],
             })
             .take(2 * L),
@@ -352,6 +358,7 @@ impl CCH {
             nodes,
             edges,
             edge_weigths: [vec![], vec![]],
+            parent_edge_weigths: [vec![], vec![]],
             edge_ranges: vec![],
             dist: [vec![], vec![]],
             child_count: vec![],
@@ -577,7 +584,26 @@ impl CCH {
             info!("delete both   {:>8}", delete_both);
         }
 
-        //
+        // Unify the edges in each node with its parent's edges.
+        {
+            info!("Edges before unification: {:>8}", self.edges.len());
+            let mut new_edges = vec![];
+            for u in 0..self.n - 1 {
+                let unified = self.unify_edges(u);
+                self.nodes[u as usize].first_edge_idx = new_edges.len() as u32;
+                new_edges.extend(unified);
+            }
+            // last iteration does not have parents
+            {
+                let u = self.n - 1;
+                let len = new_edges.len() as u32;
+                new_edges.extend(self.edges[self.edge_range(u)].iter().copied());
+                self.nodes[u as usize].first_edge_idx = len;
+            }
+            self.nodes[self.n as usize].first_edge_idx = new_edges.len() as u32;
+            self.edges = new_edges;
+            info!("Edges after unification : {:>8}", self.edges.len());
+        }
 
         // Add dummy INF edges if neighbours are at most GAP apart.
         info!("Add dummy edges.. Starting with {} edges", self.edges.len());
@@ -600,6 +626,7 @@ impl CCH {
                         new_edges.push(HalfEdge {
                             head: v_new,
                             weight: [W_INF; 2],
+                            parent_weight: [W_INF; 2],
                             deleted: [false; 2],
                         });
                     }
@@ -609,6 +636,7 @@ impl CCH {
                         new_edges.push(HalfEdge {
                             head: v_new,
                             weight: [W_INF; 2],
+                            parent_weight: [W_INF; 2],
                             deleted: [false; 2],
                         });
                     }
@@ -626,6 +654,7 @@ impl CCH {
                 new_edges.push(HalfEdge {
                     head: v_new,
                     weight: [W_INF; 2],
+                    parent_weight: [W_INF; 2],
                     deleted: [false; 2],
                 });
             }
@@ -673,19 +702,89 @@ impl CCH {
                     self.edge_ranges[range_range.start + i] = r.1;
                     self.edges[new_range].copy_from_slice(&old_weights[old_range]);
                 }
-
-                // self.edge_ranges[range_range].copy_from_slice(&ranges);
             }
         }
         // Fill edge weights
         for e in &self.edges {
             for dir in [UP, DOWN] {
                 self.edge_weigths[dir].push(e.weight[dir]);
+                self.parent_edge_weigths[dir].push(e.parent_weight[dir]);
             }
         }
         for dir in [UP, DOWN] {
             self.edge_weigths[dir].extend(std::iter::repeat(W_INF).take(2 * L));
+            self.parent_edge_weigths[dir].extend(std::iter::repeat(W_INF).take(2 * L));
         }
+    }
+
+    fn unify_edges(&self, u: NodeId) -> Vec<HalfEdge> {
+        assert!(u < self.n - 1);
+
+        let p = self.nodes[u as usize].parent;
+        // self edges, without edge to parent
+        let mut a = &self.edges[self.edge_range(u)];
+        if self.edges[self.edge_range(u).start].head == p {
+            a = &a[1..];
+        }
+        // parent edges
+        let b = &self.edges[self.edge_range(p)];
+
+        // unify
+        let mut out = vec![];
+        let mut i = 0;
+        let mut j = 0;
+        while i < a.len() && j < b.len() {
+            let head_a = a[i].head;
+            let head_b = b[j].head;
+            if head_a == head_b {
+                out.push(HalfEdge {
+                    head: head_a,
+                    weight: a[i].weight,
+                    parent_weight: b[j].weight,
+                    deleted: [false; 2],
+                });
+                i += 1;
+                j += 1;
+            } else if head_a < head_b {
+                out.push(HalfEdge {
+                    head: head_a,
+                    weight: a[i].weight,
+                    parent_weight: [W_INF; 2],
+                    deleted: [false; 2],
+                });
+                i += 1;
+            } else {
+                out.push(HalfEdge {
+                    head: head_b,
+                    weight: [W_INF; 2],
+                    parent_weight: b[j].weight,
+                    deleted: [false; 2],
+                });
+                j += 1;
+            }
+        }
+        while i < a.len() {
+            let head_a = a[i].head;
+            out.push(HalfEdge {
+                head: head_a,
+                weight: a[i].weight,
+                parent_weight: [W_INF; 2],
+                deleted: [false; 2],
+            });
+            i += 1;
+        }
+        while j < b.len() {
+            let head_b = b[j].head;
+            out.push(HalfEdge {
+                head: head_b,
+                weight: [W_INF; 2],
+                parent_weight: b[j].weight,
+                deleted: [false; 2],
+            });
+            j += 1;
+        }
+
+        out
     }
 
     #[inline(never)]
@@ -792,6 +891,16 @@ impl CCH {
             ..self.nodes[x as usize + 1].first_range_idx as usize];
         let d = &mut self.dist[dir];
         let w = &self.edge_weigths[dir];
+
+        // Relax parent
+        {
+            let p = self.nodes[x as usize].parent;
+            if p != INVALID_ID {
+                let w_parent = self.nodes[x as usize].parent_weight[dir];
+                let dp = dx + w_parent;
+                d[p as usize] = d[p as usize].min(dp);
+            }
+        }
 
         let dx_simd = S::splat(dx);
         let mut i0 = edge_range.start as usize;
