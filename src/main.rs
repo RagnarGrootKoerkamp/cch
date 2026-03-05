@@ -805,69 +805,119 @@ impl CCH {
         let mut num_pruned = 0;
         let mut num_pruned_edges = 0;
 
-        // Process the smaller of s and t.
+        // Do a single expand if s or t is on an even level.
         let mut cur = [s, t];
-        while cur[0] != cur[1] {
-            let dir = if cur[UP] <= cur[DOWN] { UP } else { DOWN };
-            num_visited_nodes += 1;
+        trace!(
+            "start: {cur:?} levels {} {}",
+            self.level[cur[0] as usize],
+            self.level[cur[1] as usize]
+        );
+
+        for dir in [UP, DOWN] {
+            if self.level[cur[dir] as usize] % 2 == 1 {
+                continue;
+            }
             let x = cur[dir];
-            let dx = self.dist[dir][x as usize];
             self.expand_node(
+                &mut num_visited_nodes,
+                &mut num_pruned,
                 &mut num_expanded_nodes,
                 &mut num_edges,
                 &mut num_pruned_edges,
                 dir,
                 x,
-                dx,
                 None,
             );
 
             // Go to parent.
             cur[dir] = self.nodes[x as usize].parent;
+            trace!(
+                "Initial expand of {x} to parent {}, level {}",
+                cur[dir],
+                self.level[cur[dir] as usize]
+            );
+            assert!(self.level[cur[dir] as usize] % 2 == 1);
+        }
+
+        // Process the smaller of s and t, 2 levels at a time.
+        while cur[0] != cur[1] {
+            trace!(
+                "cur {cur:?} levels {} {}",
+                self.level[cur[0] as usize],
+                self.level[cur[1] as usize]
+            );
+            let dir = if cur[UP] <= cur[DOWN] { UP } else { DOWN };
+            num_visited_nodes += 2;
+            let x = cur[dir];
+
+            self.expand_node_and_parent(
+                &mut num_visited_nodes,
+                &mut num_pruned,
+                &mut num_expanded_nodes,
+                &mut num_edges,
+                &mut num_pruned_edges,
+                dir,
+                x,
+                None,
+            );
+
+            // Go to parent.
+            cur[dir] = self.nodes[x as usize].parent_parent;
+            trace!("expanded {x}, pp {}", cur[dir]);
         }
         let mut x = cur[0];
+        // FIXME: Track best distance in case s and t meet at an in-between level.
         let mut best_dist = W_INF;
         while x != INVALID_ID {
             best_dist = best_dist.min(self.dist[UP][x as usize] + self.dist[DOWN][x as usize]);
 
             for dir in [UP, DOWN] {
-                num_visited_nodes += 1;
-                let dx = self.dist[dir][x as usize];
-                if dx >= best_dist {
-                    num_pruned += 1;
-                    // cleanup for reuse
-                    self.dist[dir][x as usize] = W_INF;
-                    continue;
-                }
-                self.expand_node(
+                self.expand_node_and_parent(
+                    &mut num_visited_nodes,
+                    &mut num_pruned,
                     &mut num_expanded_nodes,
                     &mut num_edges,
                     &mut num_pruned_edges,
                     dir,
                     x,
-                    dx,
                     Some(best_dist),
                 );
             }
             // Go to parent.
-            x = self.nodes[x as usize].parent;
+            let old = x;
+            x = self.nodes[x as usize].parent_parent;
+            trace!("expanded {old}, pp {x}");
         }
 
         debug!("dists from {s:>10}-{t:>10}: {best_dist:>10}. {num_visited_nodes:>6} visited, {num_pruned:>6} pruned, {num_expanded_nodes:>6} expanded, {num_edges:>6} relaxed, {num_pruned_edges:>6} pruned edges");
+        // panic!();
         best_dist
     }
 
     #[inline(always)]
     fn expand_node(
         &mut self,
+        num_visited_nodes: &mut usize,
+        num_pruned: &mut usize,
         num_expanded_nodes: &mut i32,
         num_edges: &mut usize,
         num_pruned_edges: &mut usize,
         dir: usize,
         x: u32,
-        dx: Weight,
         best: Option<Weight>,
     ) {
+        *num_visited_nodes += 1;
+        let dx = self.dist[dir][x as usize];
+
+        if let Some(best_dist) = best {
+            if dx >= best_dist {
+                *num_pruned += 1;
+                // cleanup for reuse
+                self.dist[dir][x as usize] = W_INF;
+                return;
+            }
+        }
+
         // Distance to a parent can be INF in case edges were pruned.
         if dx >= W_INF {
             return;
@@ -935,6 +985,109 @@ impl CCH {
         }
         // cleanup for reuse
         self.dist[dir][x as usize] = W_INF;
+    }
+
+    #[inline(always)]
+    fn expand_node_and_parent(
+        &mut self,
+        num_visited_nodes: &mut usize,
+        num_pruned: &mut usize,
+        num_expanded_nodes: &mut i32,
+        num_edges: &mut usize,
+        num_pruned_edges: &mut usize,
+        dir: usize,
+        x: u32,
+        best: Option<Weight>,
+    ) {
+        *num_visited_nodes += 2;
+        let dx = self.dist[dir][x as usize];
+        let p = self.nodes[x as usize].parent;
+        // trace!("Double expanding {x} with parent {p}");
+        // if p == INVALID_ID {
+        //     // x is the root
+        //     self.dist[dir][x as usize] = W_INF;
+        //     return;
+        // }
+        assert!(p != INVALID_ID);
+        let xp_weight = self.nodes[x as usize].parent_weight[dir];
+        // min of existing dist to parent and dist via x.
+        let dp = self.dist[dir][p as usize].min(dx + xp_weight);
+        if let Some(best_dist) = best {
+            if dx >= best_dist && dp >= best_dist {
+                *num_pruned += 1;
+                // cleanup for reuse
+                self.dist[dir][x as usize] = W_INF;
+                self.dist[dir][p as usize] = W_INF;
+                return;
+            }
+        }
+        // TODO: Update best for meeting in parent
+
+        // Distance to a parent can be INF in case edges were pruned.
+        if dx >= W_INF && dp >= W_INF {
+            return;
+        }
+
+        *num_expanded_nodes += 2;
+        let edge_range = self.edge_range(x);
+        if edge_range.is_empty() {
+            self.dist[dir][x as usize] = W_INF;
+            return;
+        }
+        if log::log_enabled!(log::Level::Trace) {
+            let outdeg = edge_range
+                .clone()
+                .filter(|i| self.edges[*i].weight[0] < W_INF || self.edges[*i].weight[1] < W_INF)
+                .count();
+            trace!("expanding {x} with degree {outdeg} ({})", edge_range.len());
+        }
+
+        *num_edges += edge_range.len();
+        let ranges = &self.edge_ranges[self.nodes[x as usize].first_range_idx as usize
+            ..self.nodes[x as usize + 1].first_range_idx as usize];
+        let d = &mut self.dist[dir];
+        let w = &self.edge_weigths[dir];
+        let pw = &self.parent_edge_weigths[dir];
+
+        let dx_simd = S::splat(dx);
+        let dp_simd = S::splat(dp);
+        let mut i0 = edge_range.start as usize;
+        for range in ranges {
+            unsafe {
+                let v0 = range.first_head;
+
+                // Edge pruning
+                if let Some(best) = best {
+                    if dx + range.min_weight >= best {
+                        *num_pruned_edges += edge_range.end - i0;
+                        break;
+                    }
+                }
+
+                // A single loop body
+                {
+                    let old_dists = S::from_array(
+                        *d.get_unchecked(v0 as usize..v0 as usize + L)
+                            .as_array()
+                            .unwrap(),
+                    );
+                    let xw = S::from_array(*w.get_unchecked(i0..i0 + L).as_array().unwrap());
+                    let pw = S::from_array(*pw.get_unchecked(i0..i0 + L).as_array().unwrap());
+                    // debug!("dir {dir} x {x} p {p} dx {dx} dp {dp} xw {xw:?} pw {pw:?}");
+                    let x_dists = dx_simd + xw;
+                    let p_dists = dp_simd + pw;
+                    let min_dists = old_dists.simd_min(x_dists.simd_min(p_dists));
+                    // let min_dists = old_dists.simd_min(x_dists);
+                    *d.get_unchecked_mut(v0 as usize..v0 as usize + L)
+                        .as_mut_array()
+                        .unwrap() = min_dists.to_array();
+                }
+                i0 += 8;
+            }
+        }
+        // cleanup for reuse
+        self.dist[dir][x as usize] = W_INF;
+        self.dist[dir][p as usize] = W_INF;
     }
 }
 
