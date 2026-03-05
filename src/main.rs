@@ -114,6 +114,15 @@ struct EdgeRange {
     min_weight: Weight,
 }
 
+#[derive(Clone, Copy, Default, epserde::Epserde)]
+#[repr(C)]
+#[repr(align(64))]
+#[epserde_zero_copy]
+struct EdgeBlock {
+    weights: [Weight; L],
+    p_weights: [Weight; L],
+}
+
 #[derive(epserde::Epserde)]
 pub struct CCH {
     /// The number of nodes
@@ -132,7 +141,7 @@ pub struct CCH {
     /// Ranges of edges
     edge_ranges: Vec<EdgeRange>,
     /// Flattened edge weights
-    edge_weigths: [Vec<Weight>; 2],
+    edge_weigths: [Vec<EdgeBlock>; 2],
     /// Flattened edge weights
     parent_edge_weigths: [Vec<Weight>; 2],
 
@@ -708,19 +717,33 @@ impl CCH {
         let (chunks, empty) = self.edges.as_chunks::<8>();
         assert!(empty.is_empty());
         for block in chunks {
-            for e in block {
-                for dir in [UP, DOWN] {
-                    self.edge_weigths[dir].push(e.weight[dir]);
+            for dir in [UP, DOWN] {
+                let mut out_block = EdgeBlock::default();
+                assert_eq!(block.len(), L);
+                for i in 0..L {
+                    out_block.weights[i] = block[i].weight[dir];
                 }
-            }
-            for e in block {
-                for dir in [UP, DOWN] {
-                    self.edge_weigths[dir].push(e.parent_weight[dir]);
+                for i in 0..L {
+                    out_block.p_weights[i] = block[i].parent_weight[dir];
                 }
+                self.edge_weigths[dir].push(out_block);
             }
         }
         for dir in [UP, DOWN] {
-            self.edge_weigths[dir].extend(std::iter::repeat(W_INF).take(4 * L));
+            self.edge_weigths[dir].extend(std::iter::repeat(EdgeBlock::default()).take(1 * L));
+        }
+    }
+
+    fn check_alignment(&self) {
+        // check that self.edge_weights is aligned to a cacheline
+        for dir in [UP, DOWN] {
+            let ptr = self.edge_weigths[dir].as_ptr() as usize;
+            // eprintln!("ptr: {ptr:?}");
+            assert_eq!(
+                ptr % 64,
+                0,
+                "edge weights are not cacheline aligned. ptr {ptr:x}"
+            );
         }
     }
 
@@ -960,7 +983,7 @@ impl CCH {
         }
 
         let dx_simd = S::splat(dx);
-        let mut i0 = edge_range.start as usize;
+        let mut i0 = edge_range.start as usize / 8;
         for range in ranges {
             unsafe {
                 let v0 = range.first_head;
@@ -968,7 +991,7 @@ impl CCH {
                 // Edge pruning
                 if let Some(best) = best {
                     if dx + range.min_weight >= best {
-                        *num_pruned_edges += edge_range.end - i0;
+                        *num_pruned_edges += edge_range.end - i0 * 8;
                         break;
                     }
                 }
@@ -980,15 +1003,14 @@ impl CCH {
                             .as_array()
                             .unwrap(),
                     );
-                    let ws =
-                        S::from_array(*w.get_unchecked(2 * i0..2 * i0 + L).as_array().unwrap());
+                    let ws = S::from_array(w.get_unchecked(i0).weights);
                     let new_dists = ws + dx_simd;
                     let min_dists = old_dists.simd_min(new_dists);
                     *d.get_unchecked_mut(v0 as usize..v0 as usize + L)
                         .as_mut_array()
                         .unwrap() = min_dists.to_array();
                 }
-                i0 += 8;
+                i0 += 1;
             }
         }
         // cleanup for reuse
@@ -1059,7 +1081,7 @@ impl CCH {
 
         let dx_simd = S::splat(dx);
         let dp_simd = S::splat(dp);
-        let mut i0 = edge_range.start as usize;
+        let mut i0 = edge_range.start as usize / 8;
         for range in ranges {
             unsafe {
                 let v0 = range.first_head;
@@ -1067,7 +1089,7 @@ impl CCH {
                 // Edge pruning
                 if let Some(best) = best {
                     if dx + range.min_weight >= best {
-                        *num_pruned_edges += edge_range.end - i0;
+                        *num_pruned_edges += edge_range.end - i0 * 8;
                         break;
                     }
                 }
@@ -1079,13 +1101,8 @@ impl CCH {
                             .as_array()
                             .unwrap(),
                     );
-                    let xw =
-                        S::from_array(*w.get_unchecked(2 * i0..2 * i0 + L).as_array().unwrap());
-                    let pw = S::from_array(
-                        *w.get_unchecked(2 * i0 + L..2 * i0 + 2 * L)
-                            .as_array()
-                            .unwrap(),
-                    );
+                    let xw = S::from_array(w.get_unchecked(i0).weights);
+                    let pw = S::from_array(w.get_unchecked(i0).p_weights);
                     // debug!("dir {dir} x {x} p {p} dx {dx} dp {dp} xw {xw:?} pw {pw:?}");
                     let x_dists = dx_simd + xw;
                     let p_dists = dp_simd + pw;
@@ -1095,7 +1112,7 @@ impl CCH {
                         .as_mut_array()
                         .unwrap() = min_dists.to_array();
                 }
-                i0 += 8;
+                i0 += 1;
             }
         }
         // cleanup for reuse
@@ -1154,7 +1171,8 @@ fn main() {
             cch
         })
     };
-    cch.parent_stats();
+    // cch.parent_stats();
+    cch.check_alignment();
 
     let q = 20000;
 
